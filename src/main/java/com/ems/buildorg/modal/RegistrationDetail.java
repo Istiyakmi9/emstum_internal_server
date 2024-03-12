@@ -36,11 +36,11 @@ public class RegistrationDetail {
     @JsonProperty("gSTNo")
     String gSTNo;
     @JsonProperty("DeclarationStartMonth")
-    String declarationStartMonth;
+    int declarationStartMonth;
     @JsonProperty("DeclarationEndMonth")
-    String declarationEndMonth;
+    int declarationEndMonth;
     @JsonProperty("FinancialYear")
-    String financialYear;
+    int financialYear;
     @JsonProperty("AttendanceSubmissionLimit")
-    String attendanceSubmissionLimit;
+    int attendanceSubmissionLimit;
 }

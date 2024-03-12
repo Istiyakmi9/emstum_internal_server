@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Data
 @ConfigurationProperties(prefix = "spring.datasource")
-public class DatabaseConfiguration {
+public class DbConfiguration {
     String driver;
     String url;
     String username;

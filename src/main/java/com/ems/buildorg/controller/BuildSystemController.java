@@ -1,6 +1,5 @@
 package com.ems.buildorg.controller;
 
-import com.ems.buildorg.modal.OrganizationDetail;
 import com.ems.buildorg.modal.RegistrationDetail;
 import com.ems.buildorg.modal.ResponseModel;
 import com.ems.buildorg.service.BuildSystemService;
@@ -19,9 +18,7 @@ public class BuildSystemController {
     @PostMapping("/new_organization")
     @CrossOrigin
     public ResponseEntity<?> buildNewOrganization(@RequestBody RegistrationDetail registrationDetail) throws IOException {
-        // String msg = buildSystemService.buildNewOrganizationService(registrationDetail);
-        buildSystemService.callStoredProcedureWithParameter(registrationDetail);
-        String msg = "Success";
+        String msg = buildSystemService.buildNewOrganizationService(registrationDetail);
         return ResponseEntity.ok(ResponseModel.builder().message(msg).build());
     }
 }
