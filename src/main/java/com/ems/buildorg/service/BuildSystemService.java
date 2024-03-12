@@ -2,7 +2,12 @@ package com.ems.buildorg.service;
 
 import com.ems.buildorg.modal.DatabaseConfiguration;
 import com.ems.buildorg.modal.OrganizationDetail;
+import com.ems.buildorg.modal.RegistrationDetail;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.SqlParameter;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Service;
 
@@ -11,10 +16,12 @@ import java.io.*;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -98,13 +105,14 @@ public class BuildSystemService {
         return queries;
     }
 
-    public String buildNewOrganizationService(OrganizationDetail organizationDetail) throws IOException {
+    public String buildNewOrganizationService(RegistrationDetail registrationDetail) throws IOException {
         String message = "success";
-        if (organizationDetail.getOrganizationName() == null || organizationDetail.getOrganizationName().isEmpty()) {
+
+        if (registrationDetail.getOrganizationName() == null || registrationDetail.getOrganizationName().isEmpty()) {
             return "Invalid organization name passed";
         }
 
-        String databaseName = "emstum_" + organizationDetail.getOrganizationName() + "_" + LocalDateTime.now()
+        String databaseName = "emstum_" + registrationDetail.getOrganizationName() + "_" + LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("dd_MM_yy"));
         DataSource dataSource = getDataSource();
         List<String> scripts = getDatabaseScript(databaseName);
@@ -122,6 +130,65 @@ public class BuildSystemService {
         }
 
         return message;
+    }
+
+    public void callStoredProcedureWithParameter(RegistrationDetail registrationDetail) {
+        DataSource dataSource = getDataSource();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+        SimpleJdbcCall jdbcCall = new SimpleJdbcCall(jdbcTemplate)
+                .withProcedureName("sp_new_registration");
+
+        // Define the input parameter
+        jdbcCall.addDeclaredParameter(new SqlParameter("_OrganizationName", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_CompanyName", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_Mobile", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_EmailId", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_FirstName", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_LastName", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_Password", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_Country", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_State", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_City", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_FirstAddress", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_SecondAddress", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_ThirdAddress", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_ForthAddress", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_GSTNo", java.sql.Types.VARCHAR));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_DeclarationStartMonth", Types.INTEGER));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_DeclarationEndMonth", Types.INTEGER));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_FinancialYear", Types.INTEGER));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_AttendanceSubmissionLimit", Types.INTEGER));
+        jdbcCall.addDeclaredParameter(new SqlParameter("_ProcessingResult", java.sql.Types.VARCHAR));
+
+        // Set up input parameters
+        MapSqlParameterSource inParams = new MapSqlParameterSource()
+                .addValue("_OrganizationName", registrationDetail.getOrganizationName())
+                .addValue("_CompanyName", registrationDetail.getCompanyName())
+                .addValue("_Mobile", registrationDetail.getMobile())
+                .addValue("_EmailId", registrationDetail.getEmailId())
+                .addValue("_FirstName", registrationDetail.getFirstName())
+                .addValue("_LastName", registrationDetail.getLastName())
+                .addValue("_Password", registrationDetail.getPassword())
+                .addValue("_Country", registrationDetail.getCountry())
+                .addValue("_State", registrationDetail.getState())
+                .addValue("_City", registrationDetail.getCity())
+                .addValue("_FirstAddress", registrationDetail.getFirstAddress())
+                .addValue("_SecondAddress", registrationDetail.getSecondAddress())
+                .addValue("_ThirdAddress", registrationDetail.getThirdAddress())
+                .addValue("_ForthAddress", registrationDetail.getForthAddress())
+                .addValue("_GSTNo", registrationDetail.getGSTNo())
+                .addValue("_DeclarationStartMonth", registrationDetail.getDeclarationStartMonth())
+                .addValue("_DeclarationEndMonth", registrationDetail.getDeclarationEndMonth())
+                .addValue("_FinancialYear", registrationDetail.getFinancialYear())
+                .addValue("_AttendanceSubmissionLimit", registrationDetail.getAttendanceSubmissionLimit());
+
+        // Call the stored procedure
+        Map<String, Object> result = jdbcCall.execute(inParams);
+
+        String outputParamValue = (String) result.get("_ProcessingResult");
+        // Handle the result if needed
+        // For example, you can extract output parameters or result sets
     }
 
     private boolean createDatabase(DataSource dataSource, String script) {

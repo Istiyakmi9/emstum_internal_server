@@ -1,6 +1,7 @@
 package com.ems.buildorg.controller;
 
 import com.ems.buildorg.modal.OrganizationDetail;
+import com.ems.buildorg.modal.RegistrationDetail;
 import com.ems.buildorg.modal.ResponseModel;
 import com.ems.buildorg.service.BuildSystemService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,8 +18,10 @@ public class BuildSystemController {
 
     @PostMapping("/new_organization")
     @CrossOrigin
-    public ResponseEntity<?> buildNewOrganization(@RequestBody OrganizationDetail organizationDetail) throws IOException {
-        String msg = buildSystemService.buildNewOrganizationService(organizationDetail);
+    public ResponseEntity<?> buildNewOrganization(@RequestBody RegistrationDetail registrationDetail) throws IOException {
+        // String msg = buildSystemService.buildNewOrganizationService(registrationDetail);
+        buildSystemService.callStoredProcedureWithParameter(registrationDetail);
+        String msg = "Success";
         return ResponseEntity.ok(ResponseModel.builder().message(msg).build());
     }
 }
