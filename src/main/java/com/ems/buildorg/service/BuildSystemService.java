@@ -29,8 +29,12 @@ public class BuildSystemService {
 
     private DataSource getDataSource() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        var catalog = databaseConfiguration.getCatalog();
+        if (databaseConfiguration.getCatalog() == null || databaseConfiguration.getCatalog().isEmpty())
+            catalog = "";
+
         dataSource.setDriverClassName(databaseConfiguration.getDriver());
-        dataSource.setUrl(databaseConfiguration.getUrl());
+        dataSource.setUrl(databaseConfiguration.getUrl() + catalog);
         dataSource.setUsername(databaseConfiguration.getUsername());
         dataSource.setPassword(databaseConfiguration.getPassword());
         dataSource.setCatalog(databaseConfiguration.getCatalog());
@@ -38,7 +42,7 @@ public class BuildSystemService {
     }
 
     private List<String> getDatabaseScript(String databaseName) throws IOException {
-        File file = new File("D:\\Backup\\emstum-script.sql");
+        File file = new File("E:\\WorkSpace\\backup.sql");
         List<String> queries = new ArrayList<>();
         StringBuilder query = new StringBuilder();
         boolean isProc = false;
@@ -77,6 +81,8 @@ public class BuildSystemService {
                         }
 
                         query.append("\n");
+                    } else if (line.toUpperCase().startsWith("INSERT INTO")) {
+                        queries.add(line);
                     }
                 } else {
                     if (line.toUpperCase().contains("ENGINE=INNODB")) {
@@ -84,10 +90,6 @@ public class BuildSystemService {
                         queries.add(String.valueOf(query.toString()));
                         query = new StringBuilder();
                     } else if (line.toUpperCase().contains("DELIMITER ;")) {
-                        /*if (isProc) {
-                            query.append(line);
-                        }*/
-
                         query.append("\n");
                         queries.add(String.valueOf(query.toString()));
                         query = new StringBuilder();
@@ -115,14 +117,59 @@ public class BuildSystemService {
         boolean flag = createDatabase(dataSource, scripts.get(0));
         if (flag) {
             // change connection string and point to new database
-            databaseConfiguration.setUrl(databaseConfiguration.getUrl() + databaseName);
             databaseConfiguration.setCatalog(databaseName);
             dataSource = getDataSource();
 
             executeQuery(dataSource, scripts);
         }
 
-        return callStoredProcedureWithParameter(databaseName, registrationDetail);
+        callStoredProcedureWithParameter(databaseName, registrationDetail);
+
+        return addNewEntryIntoMasterData(databaseName, registrationDetail.getOrganizationName());
+    }
+
+    private String addNewEntryIntoMasterData(String database, String organizationName) {
+        databaseConfiguration.setCatalog("ems_master");
+        DataSource dataSource = getDataSource();
+
+        String outputParamValue = null;
+
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        try (Connection connection = Objects.requireNonNull(jdbcTemplate.getDataSource()).getConnection()) {
+            CallableStatement callableStatement = connection.prepareCall("{call sp_database_connections_insupd(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
+
+            // Set input parameters
+            callableStatement.setInt("_EmsMasterId", 0);
+            callableStatement.setString("_OrganizationCode", organizationName.toUpperCase().substring(0, 3));
+            callableStatement.setString("_Code", "");
+            callableStatement.setString("_Schema", "jdbc");
+            callableStatement.setString("_DatabaseName", "mysql");
+            callableStatement.setString("_Server", "178.16.138.169");
+            callableStatement.setString("_Port", "3308");
+            callableStatement.setString("_Database", database);
+            callableStatement.setString("_UserId", "root");
+            callableStatement.setString("_Password", databaseConfiguration.getPassword());
+            callableStatement.setInt("_ConnectionTimeout", 30);
+            callableStatement.setInt("_ConnectionLifetime", 0);
+            callableStatement.setInt("_MinPoolSize", 0);
+            callableStatement.setInt("_MaxPoolSize", 100);
+            callableStatement.setBoolean("_Pooling", true);
+
+            // Register output parameter
+            callableStatement.registerOutParameter("_ProcessingResult", Types.VARCHAR);
+
+            // Execute the stored procedure
+            callableStatement.execute();
+
+            // Retrieve output parameter value
+            outputParamValue = callableStatement.getString("_ProcessingResult");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Handle exception as needed
+        }
+
+        return outputParamValue;
     }
 
     private String getDatabaseName(RegistrationDetail registrationDetail) {
