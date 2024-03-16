@@ -2,22 +2,23 @@ package com.ems.buildorg.service;
 
 import com.ems.buildorg.modal.DbConfiguration;
 import com.ems.buildorg.modal.RegistrationDetail;
+import com.ems.buildorg.util.GetEncryptedPassword;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.SqlParameter;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
-import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -104,6 +105,7 @@ public class BuildSystemService {
         return queries;
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public String buildNewOrganizationService(RegistrationDetail registrationDetail) throws IOException {
         if (registrationDetail.getOrganizationName() == null || registrationDetail.getOrganizationName().isEmpty()) {
             return "Invalid organization name passed";
@@ -173,11 +175,13 @@ public class BuildSystemService {
     }
 
     private String getDatabaseName(RegistrationDetail registrationDetail) {
-        return "emstum_" + registrationDetail.getOrganizationName().toLowerCase() + "_" + LocalDateTime.now()
+        // Remove all whitespaces
+        String organizationName = registrationDetail.getOrganizationName().replaceAll("\\s", "");
+        return "emstum_" + organizationName.toLowerCase() + "_" + LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("dd_MM_yy"));
     }
 
-    public String callStoredProcedureWithParameter(String databaseName, RegistrationDetail registrationDetail) {
+    public String callStoredProcedureWithParameter(String databaseName, RegistrationDetail registrationDetail) throws IOException {
         String outputParamValue = null;
 //        String databaseName = getDatabaseName(registrationDetail);
 //        databaseConfiguration.setUrl(databaseConfiguration.getUrl() + databaseName);
@@ -185,6 +189,8 @@ public class BuildSystemService {
 
         DataSource dataSource = getDataSource();
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        GetEncryptedPassword getEncryptedPassword = GetEncryptedPassword.getEncryptedPassword();
+        var encryptedPassword = getEncryptedPassword.generateEncryptedPassword();
         try (Connection connection = Objects.requireNonNull(jdbcTemplate.getDataSource()).getConnection()) {
             CallableStatement callableStatement = connection.prepareCall("{call sp_new_registration(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
 
@@ -195,7 +201,7 @@ public class BuildSystemService {
             callableStatement.setString("_EmailId", registrationDetail.getEmailId());
             callableStatement.setString("_FirstName", registrationDetail.getFirstName());
             callableStatement.setString("_LastName", registrationDetail.getLastName());
-            callableStatement.setString("_Password", registrationDetail.getPassword());
+            callableStatement.setString("_Password", encryptedPassword);
             callableStatement.setString("_Country", registrationDetail.getCountry());
             callableStatement.setString("_State", registrationDetail.getState());
             callableStatement.setString("_City", registrationDetail.getCity());
