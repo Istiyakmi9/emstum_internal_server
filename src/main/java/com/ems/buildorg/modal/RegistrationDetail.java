@@ -43,4 +43,12 @@ public class RegistrationDetail {
     int financialYear;
     @JsonProperty("AttendanceSubmissionLimit")
     int attendanceSubmissionLimit;
+    @JsonProperty("ProbationPeriodInDays")
+    int probationPeriodInDays;
+    @JsonProperty("NoticePeriodInDays")
+    int noticePeriodInDays;
+    @JsonProperty("NoticePeriodInProbation")
+    int noticePeriodInProbation;
+    @JsonProperty("TimezoneName")
+    String timezoneName;
 }

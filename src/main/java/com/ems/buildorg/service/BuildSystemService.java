@@ -192,7 +192,7 @@ public class BuildSystemService {
         GetEncryptedPassword getEncryptedPassword = GetEncryptedPassword.getEncryptedPassword();
         var encryptedPassword = getEncryptedPassword.generateEncryptedPassword();
         try (Connection connection = Objects.requireNonNull(jdbcTemplate.getDataSource()).getConnection()) {
-            CallableStatement callableStatement = connection.prepareCall("{call sp_new_registration(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
+            CallableStatement callableStatement = connection.prepareCall("{call sp_new_registration(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
 
             // Set input parameters
             callableStatement.setString("_OrganizationName", registrationDetail.getOrganizationName());
@@ -214,6 +214,12 @@ public class BuildSystemService {
             callableStatement.setInt("_DeclarationEndMonth", registrationDetail.getDeclarationEndMonth());
             callableStatement.setInt("_FinancialYear", registrationDetail.getFinancialYear());
             callableStatement.setInt("_AttendanceSubmissionLimit", registrationDetail.getAttendanceSubmissionLimit());
+            callableStatement.setInt("_ProbationPeriodInDays", registrationDetail.getProbationPeriodInDays());
+            callableStatement.setInt("_NoticePeriodInDays", registrationDetail.getNoticePeriodInDays());
+            callableStatement.setInt("_NoticePeriodInProbation", registrationDetail.getNoticePeriodInProbation());
+            callableStatement.setInt("_CreatedBy", 1);
+            callableStatement.setString("_TimezoneName", registrationDetail.getTimezoneName());
+
 
             // Register output parameter
             callableStatement.registerOutParameter("_ProcessingResult", Types.VARCHAR);
