@@ -12,12 +12,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -26,6 +24,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 public class BuildSystemService {
@@ -50,63 +49,66 @@ public class BuildSystemService {
 
     private List<String> getDatabaseScript(String databaseName) throws IOException, URISyntaxException {
         ClassLoader classLoader = getClass().getClassLoader();
-        URL resource = classLoader.getResource("backup.sql");
-        File file = new File(resource.toURI());
         List<String> queries = new ArrayList<>();
         StringBuilder query = new StringBuilder();
         boolean isProc = false;
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.startsWith("--")) {
-                    continue;
-                }
-
-                if (line.startsWith("/*") && line.trim().length() > 2) {
-                    continue;
-                }
-
-                line = line.replaceAll("`", "");
-                if (query.length() == 0) {
-                    if (line.toUpperCase().startsWith("CREATE DATABASE")) {
-                        queries.add(line.replace("__database_name__", databaseName));
-                    } else if (line.toUpperCase().startsWith("USE") || line.toUpperCase().startsWith("DROP TABLE")) {
+        try (InputStream inputStream = classLoader.getResourceAsStream("backup.sql")) {
+            assert inputStream != null;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("--")) {
                         continue;
-                    } else if (line.toUpperCase().startsWith("CREATE")) {
-                        query = new StringBuilder(new StringBuilder(line));
-                    } else if (line.toUpperCase().startsWith("DELIMITER ;;")) {
-                        line = reader.readLine();
-                        if (line != null && line.toUpperCase().contains("PROCEDURE")) {
-                            line = line.replaceAll("`", "");
-                            query = new StringBuilder();
-                            query.append("\n")
-                                    .append(line);
-
-                            isProc = true;
-                        } else {
-                            query = new StringBuilder();
-                            query.append(line);
-                        }
-
-                        query.append("\n");
-                    } else if (line.toUpperCase().startsWith("INSERT INTO")) {
-                        queries.add(line);
                     }
-                } else {
-                    if (line.toUpperCase().contains("ENGINE=INNODB")) {
-                        query.append(line).append("\n");
-                        queries.add(String.valueOf(query.toString()));
-                        query = new StringBuilder();
-                    } else if (line.toUpperCase().contains("DELIMITER ;")) {
-                        query.append("\n");
-                        queries.add(String.valueOf(query.toString()));
-                        query = new StringBuilder();
+
+                    if (line.startsWith("/*") && line.trim().length() > 2) {
+                        continue;
+                    }
+
+                    line = line.replaceAll("`", "");
+                    if (query.isEmpty()) {
+                        if (line.toUpperCase().startsWith("CREATE DATABASE")) {
+                            queries.add(line.replace("__database_name__", databaseName));
+                        } else if (line.toUpperCase().startsWith("USE") || line.toUpperCase().startsWith("DROP TABLE")) {
+                            continue;
+                        } else if (line.toUpperCase().startsWith("CREATE")) {
+                            query = new StringBuilder(new StringBuilder(line));
+                        } else if (line.toUpperCase().startsWith("DELIMITER ;;")) {
+                            line = reader.readLine();
+                            if (line != null && line.toUpperCase().contains("PROCEDURE")) {
+                                line = line.replaceAll("`", "");
+                                query = new StringBuilder();
+                                query.append("\n")
+                                        .append(line);
+
+                                isProc = true;
+                            } else {
+                                query = new StringBuilder();
+                                query.append(line);
+                            }
+
+                            query.append("\n");
+                        } else if (line.toUpperCase().startsWith("INSERT INTO")) {
+                            queries.add(line);
+                        }
                     } else {
-                        query.append(line).append("\n");
+                        if (line.toUpperCase().contains("ENGINE=INNODB")) {
+                            query.append(line).append("\n");
+                            queries.add(String.valueOf(query.toString()));
+                            query = new StringBuilder();
+                        } else if (line.toUpperCase().contains("DELIMITER ;")) {
+                            query.append("\n");
+                            queries.add(String.valueOf(query.toString()));
+                            query = new StringBuilder();
+                        } else {
+                            query.append(line).append("\n");
+                        }
                     }
                 }
             }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read resource file", e);
         }
 
         queries.add(query.toString());
