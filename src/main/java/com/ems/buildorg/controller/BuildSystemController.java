@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 
 @RestController
 @RequestMapping("/api/create")
@@ -17,7 +18,7 @@ public class BuildSystemController {
 
     @PostMapping("/new_organization")
     @CrossOrigin
-    public ResponseEntity<?> buildNewOrganization(@RequestBody RegistrationDetail registrationDetail) throws IOException {
+    public ResponseEntity<?> buildNewOrganization(@RequestBody RegistrationDetail registrationDetail) throws IOException, URISyntaxException {
         String msg = buildSystemService.buildNewOrganizationService(registrationDetail);
         return ResponseEntity.ok(ResponseModel.builder().message(msg).build());
     }

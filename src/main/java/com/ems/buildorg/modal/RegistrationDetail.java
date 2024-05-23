@@ -51,4 +51,6 @@ public class RegistrationDetail {
     int noticePeriodInProbation;
     @JsonProperty("TimezoneName")
     String timezoneName;
+    @JsonProperty("TrailRequestId")
+    Long trailRequestId;
 }
