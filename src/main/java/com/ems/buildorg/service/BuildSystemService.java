@@ -14,6 +14,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -42,8 +44,10 @@ public class BuildSystemService {
         return dataSource;
     }
 
-    private List<String> getDatabaseScript(String databaseName) throws IOException {
-        File file = new File("E:\\WorkSpace\\backup.sql");
+    private List<String> getDatabaseScript(String databaseName) throws IOException, URISyntaxException {
+        ClassLoader classLoader = getClass().getClassLoader();
+        URL resource = classLoader.getResource("backup.sql");
+        File file = new File(resource.toURI());
         List<String> queries = new ArrayList<>();
         StringBuilder query = new StringBuilder();
         boolean isProc = false;
@@ -106,10 +110,13 @@ public class BuildSystemService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public String buildNewOrganizationService(RegistrationDetail registrationDetail) throws IOException {
+    public String buildNewOrganizationService(RegistrationDetail registrationDetail) throws IOException, URISyntaxException {
         if (registrationDetail.getOrganizationName() == null || registrationDetail.getOrganizationName().isEmpty()) {
             return "Invalid organization name passed";
         }
+
+        if (registrationDetail.getTrailRequestId() == 0)
+            return "Invalid request detail";
 
         String databaseName = getDatabaseName(registrationDetail);
         DataSource dataSource = getDataSource();
@@ -126,7 +133,7 @@ public class BuildSystemService {
         }
 
         callStoredProcedureWithParameter(databaseName, registrationDetail);
-
+        updateTrialrequestService(registrationDetail);
         return addNewEntryIntoMasterData(databaseName, registrationDetail.getOrganizationName());
     }
 
@@ -174,9 +181,47 @@ public class BuildSystemService {
         return outputParamValue;
     }
 
+    private void updateTrialrequestService(RegistrationDetail registrationDetail) {
+        databaseConfiguration.setCatalog("ems_master");
+        DataSource dataSource = getDataSource();
+
+        String outputParamValue = null;
+
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        try (Connection connection = Objects.requireNonNull(jdbcTemplate.getDataSource()).getConnection()) {
+            CallableStatement callableStatement = connection.prepareCall("{call sp_trail_request_insupd(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
+
+            // Set input parameters
+            callableStatement.setLong("_TrailRequestId", registrationDetail.getTrailRequestId());
+            callableStatement.setString("_FullName", registrationDetail.getFirstName() + " " + registrationDetail.getLastName());
+            callableStatement.setString("_Email", registrationDetail.getEmailId());
+            callableStatement.setString("_CompanyName", registrationDetail.getCompanyName());
+            callableStatement.setString("_OrganizationName", registrationDetail.getOrganizationName());
+            callableStatement.setString("_PhoneNumber", registrationDetail.getMobile());
+            callableStatement.setInt("_HeadCount", 0);
+            callableStatement.setString("_Country", registrationDetail.getCountry());
+            callableStatement.setString("_State", registrationDetail.getState());
+            callableStatement.setString("_City", registrationDetail.getCity());
+            callableStatement.setString("_FullAddress", registrationDetail.getFirstAddress());
+            callableStatement.setBoolean("_IsProcessed", true);
+            // Register output parameter
+            callableStatement.registerOutParameter("_ProcessingResult", Types.VARCHAR);
+
+            // Execute the stored procedure
+            callableStatement.execute();
+
+            // Retrieve output parameter value
+            outputParamValue = callableStatement.getString("_ProcessingResult");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Handle exception as needed
+        }
+    }
+
     private String getDatabaseName(RegistrationDetail registrationDetail) {
         // Remove all whitespaces
-        String organizationName = registrationDetail.getOrganizationName().replaceAll("\\s", "");
+        String organizationName = registrationDetail.getCompanyName().replaceAll("\\s", "");
         return "emstum_" + organizationName.toLowerCase() + "_" + LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("dd_MM_yy"));
     }
@@ -192,7 +237,7 @@ public class BuildSystemService {
         GetEncryptedPassword getEncryptedPassword = GetEncryptedPassword.getEncryptedPassword();
         var encryptedPassword = getEncryptedPassword.generateEncryptedPassword();
         try (Connection connection = Objects.requireNonNull(jdbcTemplate.getDataSource()).getConnection()) {
-            CallableStatement callableStatement = connection.prepareCall("{call sp_new_registration(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
+            CallableStatement callableStatement = connection.prepareCall("{call sp_new_registration(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
 
             // Set input parameters
             callableStatement.setString("_OrganizationName", registrationDetail.getOrganizationName());
@@ -214,6 +259,12 @@ public class BuildSystemService {
             callableStatement.setInt("_DeclarationEndMonth", registrationDetail.getDeclarationEndMonth());
             callableStatement.setInt("_FinancialYear", registrationDetail.getFinancialYear());
             callableStatement.setInt("_AttendanceSubmissionLimit", registrationDetail.getAttendanceSubmissionLimit());
+            callableStatement.setInt("_ProbationPeriodInDays", registrationDetail.getProbationPeriodInDays());
+            callableStatement.setInt("_NoticePeriodInDays", registrationDetail.getNoticePeriodInDays());
+            callableStatement.setInt("_NoticePeriodInProbation", registrationDetail.getNoticePeriodInProbation());
+            callableStatement.setInt("_CreatedBy", 1);
+            callableStatement.setString("_TimezoneName", registrationDetail.getTimezoneName());
+
 
             // Register output parameter
             callableStatement.registerOutParameter("_ProcessingResult", Types.VARCHAR);
