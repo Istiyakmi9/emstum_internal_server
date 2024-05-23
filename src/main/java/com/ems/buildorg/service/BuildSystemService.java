@@ -145,6 +145,7 @@ public class BuildSystemService {
             status = addNewEntryIntoMasterData(databaseName, registrationDetail.getOrganizationName());
         } catch (Exception ex) {
             logger.error(ex.getMessage());
+            throw ex;
         }
 
         return status;
