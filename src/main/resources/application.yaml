@@ -3,5 +3,7 @@ server:
 
 
 spring:
+  profiles:
+    active: ${profile:prod}
   application:
     name: buildorg
