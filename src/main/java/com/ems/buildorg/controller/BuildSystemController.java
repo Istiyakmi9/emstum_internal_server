@@ -18,7 +18,7 @@ public class BuildSystemController {
 
     @PostMapping("/new_organization")
     @CrossOrigin
-    public ResponseEntity<?> buildNewOrganization(@RequestBody RegistrationDetail registrationDetail) throws IOException, URISyntaxException {
+    public ResponseEntity<?> buildNewOrganization(@RequestBody RegistrationDetail registrationDetail) throws Exception {
         String msg = buildSystemService.buildNewOrganizationService(registrationDetail);
         return ResponseEntity.ok(ResponseModel.builder().message(msg).build());
     }

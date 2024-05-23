@@ -3,6 +3,8 @@ package com.ems.buildorg.service;
 import com.ems.buildorg.modal.DbConfiguration;
 import com.ems.buildorg.modal.RegistrationDetail;
 import com.ems.buildorg.util.GetEncryptedPassword;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -29,6 +31,8 @@ import java.util.regex.Pattern;
 public class BuildSystemService {
     @Autowired
     DbConfiguration databaseConfiguration;
+
+    private final Logger logger = LoggerFactory.getLogger(BuildSystemService.class);
 
     private DataSource getDataSource() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
@@ -110,31 +114,38 @@ public class BuildSystemService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public String buildNewOrganizationService(RegistrationDetail registrationDetail) throws IOException, URISyntaxException {
-        if (registrationDetail.getOrganizationName() == null || registrationDetail.getOrganizationName().isEmpty()) {
-            return "Invalid organization name passed";
+    public String buildNewOrganizationService(RegistrationDetail registrationDetail) throws Exception {
+        String status = null;
+        try {
+            if (registrationDetail.getOrganizationName() == null || registrationDetail.getOrganizationName().isEmpty()) {
+                return "Invalid organization name passed";
+            }
+
+            if (registrationDetail.getTrailRequestId() == 0)
+                return "Invalid request detail";
+
+            String databaseName = getDatabaseName(registrationDetail);
+            DataSource dataSource = getDataSource();
+            List<String> scripts = getDatabaseScript(databaseName);
+
+            // Create new database
+            boolean flag = createDatabase(dataSource, scripts.get(0));
+            if (flag) {
+                // change connection string and point to new database
+                databaseConfiguration.setCatalog(databaseName);
+                dataSource = getDataSource();
+
+                executeQuery(dataSource, scripts);
+            }
+
+            callStoredProcedureWithParameter(databaseName, registrationDetail);
+            updateTrialrequestService(registrationDetail);
+            status = addNewEntryIntoMasterData(databaseName, registrationDetail.getOrganizationName());
+        } catch (Exception ex) {
+            logger.error(ex.getMessage());
         }
 
-        if (registrationDetail.getTrailRequestId() == 0)
-            return "Invalid request detail";
-
-        String databaseName = getDatabaseName(registrationDetail);
-        DataSource dataSource = getDataSource();
-        List<String> scripts = getDatabaseScript(databaseName);
-
-        // Create new database
-        boolean flag = createDatabase(dataSource, scripts.get(0));
-        if (flag) {
-            // change connection string and point to new database
-            databaseConfiguration.setCatalog(databaseName);
-            dataSource = getDataSource();
-
-            executeQuery(dataSource, scripts);
-        }
-
-        callStoredProcedureWithParameter(databaseName, registrationDetail);
-        updateTrialrequestService(registrationDetail);
-        return addNewEntryIntoMasterData(databaseName, registrationDetail.getOrganizationName());
+        return status;
     }
 
     private String addNewEntryIntoMasterData(String database, String organizationName) {
