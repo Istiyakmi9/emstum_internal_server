@@ -744,7 +744,7 @@ CREATE TABLE `company_files` (
   `CreatedOn` datetime DEFAULT NULL,
   `UpdatedOn` datetime DEFAULT NULL,
   PRIMARY KEY (`CompanyFileId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -3211,7 +3211,7 @@ CREATE TABLE `userfiledetail` (
   `CreatedOn` datetime(6) DEFAULT NULL,
   `UpdatedOn` datetime(6) DEFAULT NULL,
   PRIMARY KEY (`FileId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -9800,7 +9800,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_Employeelogin_Auth`(
     
 /*
 
-	Call sp_Employeelogin_Auth(0, '8293437694', '', 1, 50)
+	Call sp_Employeelogin_Auth(0, '', 'istiyak.mi@gmail.com', 1, 50)
 
 */    
     
@@ -9901,7 +9901,8 @@ Begin
     and IsActive = true
     and CompanyId = @CompanyId;
     
-    select * from company;
+    select c.*, cs.FinancialYear from company c
+    inner join company_setting cs on c.CompanyId = cs.CompanyId;
     
     select * from user_layout_configuration
     where EmployeeId = @EmployeeId;
@@ -10519,9 +10520,10 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_employees_ins_upd`(
     _WorkShiftId int,
     _IsPending bit,
     _IsNewRegistration bit,
-     _PFNumber varchar(30),
+	_PFNumber varchar(30),
+    _PFJoinDate datetime,
 	_UniversalAccountNumber varchar(40),
-	_PFJoinDate datetime,
+    _SalaryDetailId int,
     out _ProcessingResult varchar(100)
 )
 Begin
@@ -10797,7 +10799,7 @@ Begin
 -- 			and _CTC < MaxAmount;
 
 			Call sp_employee_salary_detail_InsUpd(
-				0,
+				_SalaryDetailId,
 				@EmpId, 
                 _CTC, 
                 _GrossIncome, 
@@ -14037,7 +14039,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_employee_payroll_get_by_page`(
 
 /*
 
-	call sp_employee_payroll_get_by_page(2023, 6, 2023, 5, 1, 10, 1)
+	call sp_employee_payroll_get_by_page(2023, 4, 2023, 5, 0, 10, 1)
 
 */
 )
@@ -14056,6 +14058,10 @@ Begin
     
     drop table if exists employee_attendance_page;
     
+    set @payrollBarrierDay = 0;
+    select ExcludePayrollFromJoinDate into @payrollBarrierDay from company_setting
+	where CompanyId = _CompanyId;
+        
     create temporary table if not exists employee_attendance_page as (
 		select 
 			e.EmployeeUid as EmployeeId,
@@ -14091,9 +14097,18 @@ Begin
     inner join employee_attendance_page e on e.EmployeeId = l.EmployeeId;
     
 	select * from hike_bonus_salary_adhoc h
-	where h.ForYear = _ForYear and h.ForMonth = _ForMonth
+	where (h.ForYear = _ForYear and h.ForMonth = _ForMonth 
+    or h.ForYear = _PreviousYear and h.ForMonth = _PreviousMonth)
 	and h.CompanyId = _CompanyId and h.ProgressState = 9;
     
+	select EmployeeUid from employees 
+		where 
+	case
+		when Month(CreatedOn) = _ForMonth and Year(CreatedOn) = _ForYear
+		then Day(CreatedOn) > @payrollBarrierDay
+		else 1=0
+	end;
+
     drop table if exists employee_attendance_page;
 end ;;
 DELIMITER ;
@@ -16833,6 +16848,155 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_hike_bonus_salary_adhoc_taxdetail_ins_update` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_hike_bonus_salary_adhoc_taxdetail_ins_update`(
+	_SalaryAdhocId bigint,
+	_EmployeeId bigint,
+    _ProcessStepId int,
+    _FinancialYear int,
+	_OrganizationId int,
+	_CompanyId int,
+	_IsPaidByCompany bit,
+    _IsPaidByEmployee bit,
+	_IsFine bit,
+	_IsHikeInSalary bit,
+	_IsBonus bit,
+    _IsReimbursment bit,
+	_IsSalaryOnHold bit, 
+	_IsArrear bit,
+    _IsOvertime bit,
+    _IsCompOff bit,
+    _OTCalculatedOn varchar(10),
+    _AmountInPercentage decimal(10, 0),
+	_Amount decimal(10, 0),
+	_IsActive bit,
+	_PaymentActionType varchar(50),
+	_Comments varchar(500),
+    _Status int,
+	_ForYear int,
+	_ForMonth int,
+    _ProgressState int,
+    _TaxDetail json,
+    out _ProcessingResult varchar(100)
+/*
+
+	set @result= '';
+	call sp_salary_hike_ins_update (1, 1, 1, 1, 1, '2023-10-10', '2023-10-10', 1, 10.0, 100, 1, 'BS', @result);
+	select @result;
+
+*/
+
+)
+Begin
+	Begin
+		Declare exit handler for sqlexception
+		Begin
+		
+			GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE,
+										@errorno = MYSQL_ERRNO,
+										@errortext = MESSAGE_TEXT;
+										
+			Set @Message = CONCAT('ERROR ', @errorno ,  ' (', @sqlstate, '): ', @errortext);
+			Call sp_LogException(@Message, '', 'sp_hike_bonus_salary_adhoc_ins_update', 1, 0, @Result);
+		End;
+        
+        if (_SalaryAdhocId = 0) then
+        begin
+			Select SalaryAdhocId into _SalaryAdhocId from hike_bonus_salary_adhoc 
+            where EmployeeId = _EmployeeId 
+            and ForYear = _ForYear
+            and ForMonth = _ForMonth;
+        end;
+        end if;
+        
+		Set _ProcessingResult = '';
+        if not exists(select 1 from hike_bonus_salary_adhoc where SalaryAdhocId = _SalaryAdhocId) then
+        begin
+            set @salaryAdhocId = 0;
+            select SalaryAdhocId into @salaryAdhocId from hike_bonus_salary_adhoc
+            order by SalaryAdhocId desc limit 1;
+            
+            set @salaryAdhocId = @salaryAdhocId + 1;
+            
+			insert into hike_bonus_salary_adhoc values(
+				@salaryAdhocId,
+				_EmployeeId,
+                _ProcessStepId,
+                _FinancialYear,
+				_OrganizationId,
+				_CompanyId,
+				_IsPaidByCompany,
+                _IsPaidByEmployee,
+				_IsFine,
+				_IsHikeInSalary,
+				_IsBonus,
+				_IsReimbursment,
+				_IsSalaryOnHold, 
+				_IsArrear,
+                _IsOvertime,
+                _IsCompOff,
+                _OTCalculatedOn,
+				_Amount,
+                _AmountInPercentage,
+				_IsActive,
+				_PaymentActionType,
+				_Comments,
+                _Status,
+				_ForYear,
+				_ForMonth,
+                _ProgressState
+			);
+        end;
+        else 
+        begin
+			update hike_bonus_salary_adhoc set
+				IsPaidByCompany             =           _IsPaidByCompany,
+                ProcessStepId				=			_ProcessStepId,
+                IsPaidByEmployee			=			_IsPaidByEmployee,
+                FinancialYear				=			_FinancialYear,
+				IsFine                      =           _IsFine,
+				IsHikeInSalary              =           _IsHikeInSalary,
+				IsBonus                     =           _IsBonus,
+				IsReimbursment				=			_IsReimbursment,
+				IsSalaryOnHold				=			_IsSalaryOnHold,
+				IsArrear					= 			_IsArrear,
+				Amount                      =           _Amount,
+                AmountInPercentage			=			_AmountInPercentage,
+				IsActive                    =           _IsActive,
+				PaymentActionType           =           _PaymentActionType,
+				Comments     	          	=           _Comments,
+                Status						=			_Status,
+				ForYear                		=           _ForYear,
+				ForMonth               		=           _ForMonth,
+                IsCompOff					=			_IsCompOff,
+                OTCalculatedOn				=			_OTCalculatedOn,
+                IsOvertime					=			_IsOvertime,
+                ProgressState				=			_ProgressState
+			where SalaryAdhocId 			= 			_SalaryAdhocId;
+        end;
+        end if;
+        
+        update employee_salary_detail set	
+			TaxDetail				=		_TaxDetail
+		where EmployeeId = _EmployeeId;
+        
+	   Set _ProcessingResult = 'updated';
+	End;
+end ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_incometax_slab_get` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -16985,6 +17149,11 @@ DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_leave_accrual_cycle_master_data`(
 	 _CompanyId int
 
+/*
+
+	call sp_leave_accrual_cycle_master_data(1)
+
+*/
 
 )
 Begin
@@ -19967,7 +20136,11 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_manage_employee_detail_get`(
     _CompanyId int,
     _OrganizationId int
     
+/*
 
+	call sp_manage_employee_detail_get(2, 1, 1)
+
+*/
 
 )
 Begin
@@ -20045,6 +20218,7 @@ Begin
 			where FileOwnerId =_employeeId and FileName like 'profile%';
             
 			Select 
+				d.SalaryDetailId,
 				d.EmployeeId, 
 				d.CTC,
 				d.GrossIncome,
@@ -20052,12 +20226,13 @@ Begin
 				d.CompleteSalaryDetail,
 				d.NewSalaryDetail,
 				d.UpdatedOn,
-				(select EmployeeCurrentRegime from employee_declaration where EmployeeId = d.EmployeeId) as EmployeeCurrentRegime,
+				/*(select EmployeeCurrentRegime from employee_declaration where EmployeeId = d.EmployeeId) as EmployeeCurrentRegime,
 				case
 					when exists (select 1 from salary_group where d.CTC between MinAmount and MaxAmount)
 						then (select SalaryGroupId from salary_group where d.CTC between MinAmount and MaxAmount)
 					else 0
-				end GroupId, 
+				end GroupId,*/
+                1,
 				d.TaxDetail 
 			from employee_salary_detail d
 			where EmployeeId = _EmployeeId;
@@ -24568,7 +24743,7 @@ DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_project_member_getby_projectid`(
     _ProjectId int
 
-
+	# call sp_project_member_getby_projectid(1)
 )
 Begin
 	Declare exit handler for sqlexception
@@ -24582,8 +24757,10 @@ Begin
 		Call sp_LogException(@Message, '', 'sp_project_member_getby_projectid', 1, 0, @Result);
 	End;
     
-    select * from project_members_detail
-     where ProjectId = _ProjectId and IsActive = true;
+    select p.*, o.RoleName, u.FilePath, u.FileName from project_members_detail p
+    inner join org_hierarchy o on p.MemberType = o.RoleId
+    left join userfiledetail u on u.FileOwnerId = p.EmployeeId
+     where p.ProjectId = _ProjectId and p.IsActive = true;
      
 end ;;
 DELIMITER ;
@@ -28865,7 +29042,7 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2024-05-11 12:09:04
+-- Dump completed on 2024-05-23 16:39:48
 
 
 INSERT INTO `accessibility_description` VALUES (1,'Complete access. (read, udpate and detele)'),(2,'Only read access.'),(3,'Read and update access.');
@@ -28898,9 +29075,9 @@ INSERT INTO `ptax_slab` VALUES (1,'WEST BENGAL',0,10000,0,0),(2,'WEST BENGAL',10
 
 INSERT INTO `rolesandmenu` VALUES ('Administration',NULL,NULL,'fa-brands fa-fort-awesome',NULL,NULL,1),('Dashboard','Administration','administration/dashboard','fa-solid fa-gauge-high',NULL,NULL,2),('Employees','Administration','administration/employees','fa-solid fa-id-card',NULL,NULL,4),('Client','Administration','administration/clients','fa-regular fa-building',NULL,NULL,5),('Bills','Administration','administration/billdetail','fa-solid fa-file-invoice',NULL,NULL,7),('Home',NULL,NULL,'fa-brands fa-fort-awesome',NULL,NULL,8),('Profile','Manage','manage/profile','fa-solid fa-user',NULL,NULL,9),('Roles','Settings','org/roles','fa-regular fa-object-group',NULL,NULL,10),('Generate','Administration','administration/generatebill','fa-regular fa-file-pdf',NULL,NULL,11),('Attendence','Manage','manage/attendance','fa-regular fa-id-badge',NULL,NULL,12),('Manage',NULL,NULL,'fa-solid fa-house-laptop',NULL,NULL,13),('Declaration','Finance & Tax','accounts/declaration','fa-regular fa-handshake',NULL,NULL,14),('Salary','Finance & Tax','accounts/salary','fa-solid fa-money-bill-1',NULL,NULL,15),('Preferences','Finance & Tax','accounts/preferences','fa-regular fa-object-group',NULL,NULL,17),('Dashboard','Home','home/dashboard','fa-solid fa-gauge-high',NULL,NULL,18),('Accounts',NULL,NULL,'fa-solid fa-hand-holding-dollar',NULL,NULL,19),('Timesheet','Manage','manage/timesheet','fa-regular fa-calendar-days',NULL,NULL,20),('Holidays','Manage','manage/planholidays','fa-regular fa-calendar-minus',NULL,NULL,21),('My Drive','Home','common/documents','fa-solid fa-user',NULL,NULL,22),('Tax','Finance & Tax','org/taxcalculation','fa-solid fa-money-bill-wave',NULL,NULL,23),('Request','Team','team/request','fa-regular fa-hand-point-right',NULL,NULL,24),('Team',NULL,NULL,'fa-solid fa-users-viewfinder',NULL,NULL,25),('Notification','Team','team/notification','fa-regular fa-bell',NULL,NULL,26),('Settings',NULL,NULL,'fa-solid fa-gear',NULL,NULL,28),('Leave','Settings','leave/leavesetting','fa-regular fa-calendar-days',NULL,NULL,29),('Payroll','Settings','org/payrollsettings','fa-solid fa-money-bill-transfer',NULL,NULL,30),('Email','Settings','org/emailsetting','fa-regular fa-envelope',NULL,NULL,31),('Project','Team','project/projectlist','fa-regular fa-lightbulb',NULL,NULL,32),('Company','Settings','org/companysettings','fa-solid fa-gear',NULL,NULL,33),('Apply','Manage','manage/leave','fa-regular fa-calendar-days',NULL,NULL,34),('Template','Administration','administration/emailtemplate','fa-regular fa-envelope',NULL,NULL,35),('Tax Regime','Finance & Tax','accounts/taxregime','fa-solid fa-sack-dollar',NULL,NULL,36),('Configuration',NULL,NULL,'fa-solid fa-satellite-dish',NULL,NULL,37),('Offer Letter','Configuration','config/offerletter','fa-regular fa-file-lines',NULL,NULL,38),('Annexure','Configuration','config/annexure','fa-regular fa-file',NULL,NULL,39),('Manage Activity','Configuration','config/manageactivity','fa-solid fa-sliders',NULL,NULL,40),('Products','Configuration','config/products','fa-brands fa-product-hunt',NULL,NULL,41),('Service Request','Team','team/servicerequest','fa-regular fa-hand',NULL,NULL,42),('Shift','Configuration','config/manageshift','fa-solid fa-bars',NULL,NULL,43),('WorkFlow','Configuration','config/workflow','fa-solid fa-list',NULL,NULL,44),('Objective','Performance','team/objectives','fa-solid fa-tags',NULL,NULL,45),('Run Payroll','Accounts','config/processingpayroll','fa-solid fa-gears',NULL,NULL,46),('Apprisal Review','Team','team/apprisalreview','fa-solid fa-street-view',NULL,NULL,47),('Appraisal','Performance','team/appraisal','fa-solid fa-street-view',NULL,NULL,48),('Pay & Incomes','Accounts','accounts/employeedeclarationlist','fa-solid fa-users',NULL,NULL,49),('Finance & Tax',NULL,NULL,'fa-solid fa-sack-dollar',NULL,NULL,50),('Performance',NULL,NULL,'fa-solid fa-award',NULL,NULL,51),('Cron Job','Administration','administration/cronjob','fa-solid fa-list-check',NULL,NULL,52);
 
-INSERT INTO `salary_components` VALUES ('BS','BASIC SALARY','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('BT','BONUS TETSTING','BONUS TETSTING',_binary '\0',_binary '\0',0,0,0,0,0,0,0,'[]',NULL,0,0,_binary '\0',_binary '',2,NULL,0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17',NULL,0,1),('CA','CONVEYANCE ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('CRA','CAR RUNNING ALLOWANCE','',_binary '',_binary '\0',6,1,0,21600,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'10(14)(I)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('DA','DEFERRED ANNURITY','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('DPP','DONATIONS TO POLITICAL PARTIES','',_binary '',_binary '',2,1,0,-1,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80GGC',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('DPSPD','DEDUCTION WITH RESPECT TO PERSON SUFFERING FROM PHYSICAL DISABILITY','',_binary '',_binary '',2,0,0,125000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80U',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('ECI','EMPLOYER CONTRIBUTION TOWARDS INSURANCE','',_binary '\0',_binary '',7,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('EPER-PF','EMPLOYER CONTRIBUTION TOWARDS PF','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-06-22 00:00:00',1,0),('EPF','EMPLOYEES PROVIDENT FUND','',_binary '',_binary '',2,1,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('ETF','EDUCATION TUTION FEES','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('GRA','EMPLOYER CONTRIBUTION TOWARDS GRATUITY','',_binary '\0',_binary '',7,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('HL','HOUSING LOAN (PRINCIPLE)','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('HLIFTHO','HOME LOAN INTEREST FOR FIRST TIME HOME OWNERS','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80EE',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('HP','HOUSING PROPERTY','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('HRA','HOUSE RENT ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('ILAEV','INTEREST ON LOAN FOR ACQUIRING ELECTRIC VEHICLE','',_binary '',_binary '',2,0,0,150000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80EEB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('ILARHP','INTEREST ON LOAN FOR ACQUIRING RESIDENTIAL HOUSE PROPERTY','',_binary '',_binary '',2,0,0,150000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80EEA',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('LIP','LIFE INSURANCE POLICY','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('LTA','TRAVEL REIMBURSSEMENT','',_binary '',_binary '\0',6,1,0,30000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'10(5)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('MA','MEDICAL ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('MEHR','MEDICAL EXPENDITURE FOR A HANDICAPPED RELATIVE','',_binary '',_binary '',2,0,0,125000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80DD',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MES','MEDICAL EXPENDITURE ON SELF OR DEPENDENT','',_binary '',_binary '',2,0,0,100000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80DDB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MF','MUTUAL FUND','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MFP','MUTUAL FUND PENSION','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCC',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MIP','MEDICAL INSURANCE PREMIUM','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NNB','NABARD NOTIFIED BONDS','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NPSEC','NPS EMPLOYEE CONTRIBUTION','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCD(1)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NPSEMP','NPS EMPLOYEE CONTRIBUTION','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCD(1B)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NPSEMPR','NPS EMPLOYER CONTRIBUTION','',_binary '',_binary '',2,0,0,-1,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCD(2)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NSC','NATIONAL SAVING CERTIFICATE','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NT','NEW TEST COMPONENT','NEW TEST COMPONENT',_binary '\0',_binary '',2,1,0,50000,0,0,0,'[]',NULL,0,0,_binary '\0',_binary '\0',0,'18C',500000,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17',NULL,0,1),('OTHER','OTHER','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PHC','PREVENTIVE HEALTH CHECK-UP','',_binary '',_binary '',2,0,0,5000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PMIP','PARENTS MEDICAL INSURANCE PREMIUM','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('POTD','POST OFFICE TIME DEPOSITE','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PPF','PUBLIC PROVIDENT FUND','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PPHC','PARENTS PREVENTIVE HEALTH CHECK-UP','',_binary '',_binary '',2,0,0,5000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PTAX','PROFESSIONAL TAX','PROFESSIONAL TAX',_binary '\0',_binary '',2,1,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'16(III)',2500,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-01-08 00:00:00',0,1),('RB','ROYALTY PN BOOK','',_binary '',_binary '',2,0,0,300000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80QQB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('RIHEL','REPAYMENT OF INTEREST ON HIGHER EDUCATION LOAN','',_binary '',_binary '',2,0,0,-1,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80E',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('RP','ROYALTY ON PATENT','',_binary '',_binary '',2,0,0,300000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80RRB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SA','SUPER ANNUATION','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SAIT','SAVINGS ACCOUNT INTEREST TAX','',_binary '',_binary '',2,0,0,10000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80TTA',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SAIT(SC)','SAVINGS ACCOUNT INTEREST TAX (SENIOR CITIZENS)','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80TTB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SBFD','SCHEDULE BANK FD','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SCSS','SENIOR CITIZEN SAVING SCHEME','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SHA','SHIFT ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-06-03 00:00:00',1,1),('SPA','SPECIAL ALLOWANCE','',_binary '',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('SSY','SUKANYA SAMRIDDHI YOJNA','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('STD','STANDARD DEDUCTION','STANDARD DEDUCTION',_binary '\0',_binary '',2,1,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'16(IA)',50000,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','1976-01-01 00:00:00',0,1),('TC','TESTING COMPONENTS','TESTING COMPONENTS',_binary '\0',_binary '',2,0,0,100000,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'80AB',0,_binary '\0',_binary '\0',_binary '\0',_binary '','2023-06-03 06:03:17','2023-03-14 00:00:00',0,1),('TIA','TELEPHONE AND INTERNET ALLOWANCE','',_binary '',_binary '\0',6,1,0,18000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'10(14)(I)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('ULIP','UNITED LINKED INSURANCE PLAN','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('VPF','VOLUNTARY PROVIDENT FUND','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1);
+INSERT INTO `salary_components` VALUES ('BS','BASIC SALARY','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('BT','BONUS TETSTING','BONUS TETSTING',_binary '\0',_binary '\0',0,0,0,0,0,0,0,'[]',NULL,0,0,_binary '\0',_binary '',2,NULL,0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17',NULL,0,1),('CA','CONVEYANCE ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('CRA','CAR RUNNING ALLOWANCE','',_binary '',_binary '\0',6,1,0,21600,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'10(14)(I)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('DA','DEFERRED ANNURITY','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('DPP','DONATIONS TO POLITICAL PARTIES','',_binary '',_binary '',2,1,0,-1,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80GGC',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('DPSPD','DEDUCTION WITH RESPECT TO PERSON SUFFERING FROM PHYSICAL DISABILITY','',_binary '',_binary '',2,0,0,125000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80U',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('ECI','EMPLOYER CONTRIBUTION TOWARDS INSURANCE','',_binary '\0',_binary '',7,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('EPER-PF','EMPLOYER CONTRIBUTION TOWARDS PF','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-06-22 00:00:00',1,0),('EPER-SI','EMPLOYER STATE INSURANCE','EMPLOYER STATE INSURANCE',_binary '\0',_binary '\0',6,1,0,0,0,0,0,'[]',NULL,0,0,_binary '\0',_binary '\0',0,NULL,0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2024-05-11 00:00:00',NULL,0,NULL),('EPF','EMPLOYEES PROVIDENT FUND','',_binary '',_binary '',2,1,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('ESI','EMPLOYEES\' STATE INSURANCE','EMPLOYEES\' STATE INSURANCE',_binary '\0',_binary '\0',6,1,0,0,0,0,0,'[]',NULL,0,0,_binary '\0',_binary '\0',0,NULL,0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2024-05-11 00:00:00',NULL,0,NULL),('ETF','EDUCATION TUTION FEES','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('GRA','EMPLOYER CONTRIBUTION TOWARDS GRATUITY','',_binary '\0',_binary '',7,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('HL','HOUSING LOAN (PRINCIPLE)','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('HLIFTHO','HOME LOAN INTEREST FOR FIRST TIME HOME OWNERS','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80EE',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('HP','HOUSING PROPERTY','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('HRA','HOUSE RENT ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('ILAEV','INTEREST ON LOAN FOR ACQUIRING ELECTRIC VEHICLE','',_binary '',_binary '',2,0,0,150000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80EEB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('ILARHP','INTEREST ON LOAN FOR ACQUIRING RESIDENTIAL HOUSE PROPERTY','',_binary '',_binary '',2,0,0,150000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80EEA',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('LIP','LIFE INSURANCE POLICY','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('LTA','TRAVEL REIMBURSSEMENT','',_binary '',_binary '\0',6,1,0,30000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'10(5)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('MA','MEDICAL ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('MEHR','MEDICAL EXPENDITURE FOR A HANDICAPPED RELATIVE','',_binary '',_binary '',2,0,0,125000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80DD',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MES','MEDICAL EXPENDITURE ON SELF OR DEPENDENT','',_binary '',_binary '',2,0,0,100000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80DDB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MF','MUTUAL FUND','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MFP','MUTUAL FUND PENSION','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCC',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('MIP','MEDICAL INSURANCE PREMIUM','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NNB','NABARD NOTIFIED BONDS','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NPSEC','NPS EMPLOYEE CONTRIBUTION','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCD(1)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NPSEMP','NPS EMPLOYEE CONTRIBUTION','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCD(1B)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NPSEMPR','NPS EMPLOYER CONTRIBUTION','',_binary '',_binary '',2,0,0,-1,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80CCD(2)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NSC','NATIONAL SAVING CERTIFICATE','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('NT','NEW TEST COMPONENT','NEW TEST COMPONENT',_binary '\0',_binary '',2,1,0,50000,0,0,0,'[]',NULL,0,0,_binary '\0',_binary '\0',0,'18C',500000,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17',NULL,0,1),('OTHER','OTHER','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PHC','PREVENTIVE HEALTH CHECK-UP','',_binary '',_binary '',2,0,0,5000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PMIP','PARENTS MEDICAL INSURANCE PREMIUM','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('POTD','POST OFFICE TIME DEPOSITE','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PPF','PUBLIC PROVIDENT FUND','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PPHC','PARENTS PREVENTIVE HEALTH CHECK-UP','',_binary '',_binary '',2,0,0,5000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80D',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('PTAX','PROFESSIONAL TAX','PROFESSIONAL TAX',_binary '\0',_binary '',2,1,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'16(III)',2500,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-01-08 00:00:00',0,1),('RB','ROYALTY PN BOOK','',_binary '',_binary '',2,0,0,300000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80QQB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('RIHEL','REPAYMENT OF INTEREST ON HIGHER EDUCATION LOAN','',_binary '',_binary '',2,0,0,-1,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80E',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('RP','ROYALTY ON PATENT','',_binary '',_binary '',2,0,0,300000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80RRB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SA','SUPER ANNUATION','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SAIT','SAVINGS ACCOUNT INTEREST TAX','',_binary '',_binary '',2,0,0,10000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80TTA',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SAIT(SC)','SAVINGS ACCOUNT INTEREST TAX (SENIOR CITIZENS)','',_binary '',_binary '',2,0,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80TTB',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SBFD','SCHEDULE BANK FD','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SCSS','SENIOR CITIZEN SAVING SCHEME','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('SHA','SHIFT ALLOWANCE','',_binary '\0',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '',_binary '\0','2023-06-03 06:03:17','2023-06-03 00:00:00',1,1),('SPA','SPECIAL ALLOWANCE','',_binary '',_binary '\0',2,1,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('SSY','SUKANYA SAMRIDDHI YOJNA','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('STD','STANDARD DEDUCTION','STANDARD DEDUCTION',_binary '\0',_binary '',2,1,0,50000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'16(IA)',50000,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','1976-01-01 00:00:00',0,1),('TC','TESTING COMPONENTS','TESTING COMPONENTS',_binary '\0',_binary '',2,0,0,100000,0,0,0,'[]','',0,0,_binary '',_binary '\0',0,'80AB',0,_binary '\0',_binary '\0',_binary '\0',_binary '','2023-06-03 06:03:17','2023-03-14 00:00:00',0,1),('TIA','TELEPHONE AND INTERNET ALLOWANCE','',_binary '',_binary '\0',6,1,0,18000,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'10(14)(I)',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2023-03-31 00:00:00',1,1),('ULIP','UNITED LINKED INSURANCE PLAN','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1),('VPF','VOLUNTARY PROVIDENT FUND','',_binary '',_binary '',2,0,0,0,0,0,0,'[]','',0,0,_binary '\0',_binary '\0',0,'80C',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0','2023-06-03 06:03:17','2022-11-23 00:00:00',1,1);
 
-INSERT INTO `salary_group` VALUES (1,'[{\"Formula\": \"40%[CTC]\", \"Section\": \"\", \"TaxExempt\": false, \"ComponentId\": \"BS\", \"ComponentTypeId\": 2, \"IncludeInPayslip\": true, \"ComponentFullName\": \"BASIC SALARY\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"0\", \"Section\": \"\", \"TaxExempt\": false, \"ComponentId\": \"CA\", \"ComponentTypeId\": 2, \"IncludeInPayslip\": true, \"ComponentFullName\": \"CONVEYANCE ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"0\", \"Section\": \"\", \"TaxExempt\": true, \"ComponentId\": \"ECI\", \"ComponentTypeId\": 7, \"IncludeInPayslip\": true, \"ComponentFullName\": \"EMPLOYER CONTRIBUTION TOWARDS INSURANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"0\", \"Section\": \"\", \"TaxExempt\": false, \"ComponentId\": \"EPER-PF\", \"ComponentTypeId\": 2, \"IncludeInPayslip\": true, \"ComponentFullName\": \"EMPLOYER CONTRIBUTION TOWARDS PF\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"0\", \"Section\": \"\", \"TaxExempt\": true, \"ComponentId\": \"GRA\", \"ComponentTypeId\": 7, \"IncludeInPayslip\": true, \"ComponentFullName\": \"EMPLOYER CONTRIBUTION TOWARDS GRATUITY\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"40%[BASIC]\", \"Section\": \"\", \"TaxExempt\": false, \"ComponentId\": \"HRA\", \"ComponentTypeId\": 2, \"IncludeInPayslip\": true, \"ComponentFullName\": \"HOUSE RENT ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"0\", \"Section\": \"\", \"TaxExempt\": false, \"ComponentId\": \"MA\", \"ComponentTypeId\": 2, \"IncludeInPayslip\": true, \"ComponentFullName\": \"MEDICAL ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"0\", \"Section\": \"\", \"TaxExempt\": false, \"ComponentId\": \"SHA\", \"ComponentTypeId\": 2, \"IncludeInPayslip\": true, \"ComponentFullName\": \"SHIFT ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1}, {\"Formula\": \"[AUTO]\", \"Section\": \"\", \"TaxExempt\": false, \"ComponentId\": \"SPA\", \"ComponentTypeId\": 0, \"IncludeInPayslip\": true, \"ComponentFullName\": \"SPECIAL ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 0}, {\"Formula\": \"1800\", \"Section\": \"80C\", \"TaxExempt\": true, \"ComponentId\": \"EPF\", \"ComponentTypeId\": 0, \"IncludeInPayslip\": false, \"ComponentFullName\": \"EMPLOYEES PROVIDENT FUND\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 0}]','DEFAULT','DEFAULT SALARY GROUP',1,1,1,'2024-04-18 09:57:08',1);
+INSERT INTO `salary_group` VALUES (1,'[{\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"40%[CTC]\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"BS\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 2, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"BASIC SALARY\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"CA\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 2, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"CONVEYANCE ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": true, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"ECI\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 7, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"EMPLOYER CONTRIBUTION TOWARDS INSURANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"EPER-PF\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 2, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"EMPLOYER CONTRIBUTION TOWARDS PF\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": true, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"GRA\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 7, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"EMPLOYER CONTRIBUTION TOWARDS GRATUITY\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"40%[BASIC]\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"HRA\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 2, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"HOUSE RENT ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"MA\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 2, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"MEDICAL ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"SHA\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 2, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"SHIFT ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 1, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"[AUTO]\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"SPA\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 0, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": true, \"ComponentFullName\": \"SPECIAL ALLOWANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 0, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"1800\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": \"80C\", \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": true, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"EPF\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 0, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": false, \"ComponentFullName\": \"EMPLOYEES PROVIDENT FUND\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 0, \"ComponentDescription\": null, \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": null, \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"EPER-SI\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 0, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": false, \"ComponentFullName\": \"EMPLOYER STATE INSURANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 0, \"ComponentDescription\": \"EMPLOYER STATE INSURANCE\", \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}, {\"AdHocId\": 0, \"AdminId\": 0, \"Formula\": \"0\", \"IsAdHoc\": false, \"IsOpted\": false, \"Section\": null, \"IsActive\": false, \"MaxLimit\": 0.0, \"CreatedBy\": 0, \"CreatedOn\": \"0001-01-01T00:00:00\", \"TaxExempt\": false, \"UpdatedBy\": null, \"UpdatedOn\": null, \"ComponentId\": \"ESI\", \"RequireDocs\": false, \"DeclaredValue\": 0.0, \"AcceptedAmount\": 0.0, \"RejectedAmount\": 0.0, \"ComponentTypeId\": 0, \"IsAffectInGross\": false, \"PercentageValue\": 0.0, \"SectionMaxLimit\": 0.0, \"UploadedFileIds\": null, \"IncludeInPayslip\": false, \"ComponentFullName\": \"EMPLOYEES\' STATE INSURANCE\", \"IsComponentEnabled\": false, \"ComponentCatagoryId\": 0, \"ComponentDescription\": \"EMPLOYEES\' STATE INSURANCE\", \"EmployeeContribution\": 0.0, \"EmployerContribution\": 0.0, \"CalculateInPercentage\": false}]','DEFAULT','DEFAULT SALARY GROUP',1,1,0,'2024-05-11 07:09:01',1);
 
 INSERT INTO `surcharge_slab` VALUES (1,5000000,10000000,10),(2,10000001,20000000,15),(3,20000001,50000000,25),(4,50000001,0,37);
 
