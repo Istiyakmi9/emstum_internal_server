@@ -12,7 +12,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -24,7 +28,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 @Service
 public class BuildSystemService {
@@ -143,12 +146,32 @@ public class BuildSystemService {
             callStoredProcedureWithParameter(databaseName, registrationDetail);
             updateTrialrequestService(registrationDetail);
             status = addNewEntryIntoMasterData(databaseName, registrationDetail.getOrganizationName());
+            if (status != null && !status.isEmpty()) {
+                loadMasterDatabase("https://www.emstum.com/bot/dn/api/core/ReloadMaster/ReloadMaster");
+                loadMasterDatabase("https://www.emstum.com/bot/sb/api/master/reloadMaster");
+            }
         } catch (Exception ex) {
             logger.error(ex.getMessage());
             throw ex;
         }
 
         return status;
+    }
+
+    private void loadMasterDatabase(String baseurl) throws Exception {
+        try {
+            URL url = new URL(baseurl);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Accept", "application/json");
+
+            int responseCode = connection.getResponseCode();
+            System.out.println("Response Code: " + responseCode);
+            connection.disconnect();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private String addNewEntryIntoMasterData(String database, String organizationName) {
