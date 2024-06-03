@@ -359,6 +359,19 @@ CREATE TABLE `attendance_setting` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `attendance_years`
+--
+
+DROP TABLE IF EXISTS `attendance_years`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `attendance_years` (
+  `AttendanceYear` int NOT NULL,
+  PRIMARY KEY (`AttendanceYear`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `b`
 --
 
@@ -703,10 +716,9 @@ DROP TABLE IF EXISTS `company_calendar`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `company_calendar` (
-  `CompanyCalendarId` bigint NOT NULL AUTO_INCREMENT,
+  `CompanyCalendarId` bigint NOT NULL,
   `CompanyId` int DEFAULT NULL,
-  `StartDate` datetime DEFAULT NULL,
-  `EndDate` datetime DEFAULT NULL,
+  `HolidayDate` datetime DEFAULT NULL,
   `EventName` varchar(250) DEFAULT NULL,
   `IsHoliday` bit(1) DEFAULT NULL,
   `IsHalfDay` bit(1) DEFAULT NULL,
@@ -885,6 +897,46 @@ CREATE TABLE `d` (
   `dc` double NOT NULL,
   PRIMARY KEY (`da`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `daily_attendance`
+--
+
+DROP TABLE IF EXISTS `daily_attendance`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `daily_attendance` (
+  `AttendanceId` bigint NOT NULL,
+  `EmployeeId` bigint DEFAULT NULL,
+  `EmployeeName` varchar(100) DEFAULT NULL,
+  `EmployeeEmail` varchar(100) DEFAULT NULL,
+  `ReviewerId` bigint DEFAULT NULL,
+  `ReviewerName` varchar(100) DEFAULT NULL,
+  `ReviewerEmail` varchar(100) DEFAULT NULL,
+  `ProjectId` int DEFAULT NULL,
+  `TaskId` int DEFAULT NULL,
+  `TaskType` int DEFAULT NULL,
+  `LogOn` varchar(10) DEFAULT NULL,
+  `LogOff` varchar(10) DEFAULT NULL,
+  `TotalMinutes` int DEFAULT NULL,
+  `Comments` json DEFAULT NULL,
+  `AttendanceStatus` int DEFAULT NULL,
+  `WeekOfYear` int DEFAULT NULL,
+  `AttendanceDate` datetime NOT NULL,
+  `WorkTypeId` int DEFAULT NULL,
+  `IsOnLeave` bit(1) DEFAULT NULL,
+  `LeaveId` int DEFAULT NULL,
+  `CreatedBy` bigint NOT NULL,
+  `CreatedOn` datetime NOT NULL,
+  `UpdatedBy` bigint DEFAULT NULL,
+  `UpdatedOn` datetime DEFAULT NULL,
+  PRIMARY KEY (`AttendanceId`,`AttendanceDate`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+/*!50100 PARTITION BY RANGE (year(`AttendanceDate`))
+(PARTITION p2023 VALUES LESS THAN (2024) ENGINE = InnoDB,
+ PARTITION p2024 VALUES LESS THAN (2025) ENGINE = InnoDB,
+ PARTITION p2025 VALUES LESS THAN (2026) ENGINE = InnoDB) */;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2130,7 +2182,7 @@ CREATE TABLE `leave_request_notification` (
   `CreatedBy` bigint DEFAULT NULL,
   `UpdatedBy` bigint DEFAULT NULL,
   PRIMARY KEY (`LeaveRequestNotificationId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2437,7 +2489,7 @@ CREATE TABLE `performance_objective` (
   `CreatedOn` datetime DEFAULT NULL,
   `UpdatedOn` datetime DEFAULT NULL,
   PRIMARY KEY (`ObjectiveId`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -4476,7 +4528,7 @@ Begin
 		f.ListnerDetail, w.* 
 	from approval_work_flow f
 	inner join approval_chain_detail w on w.ApprovalWorkFlowId = f.ApprovalWorkFlowId
-	where f.ApprovalWorkFlowId = 1;
+	where f.ApprovalWorkFlowId = _ApprovalWorkFlowId;
     
 	select * from org_hierarchy where CompanyId = _CompanyId;
 End ;;
@@ -4999,10 +5051,8 @@ DELIMITER ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_attendance_employee_detail_id`(
-	_EmployeeId bigint,
-    _AttendanceId int    
-    
-
+	_EmployeeId bigint, 
+    _AttendanceIds json
 
 )
 Begin
@@ -5018,16 +5068,35 @@ Begin
 			Call sp_LogException(@Message, '', 'sp_attendance_employee_detail_id', 1, 0, @Result);
 		End;
 		
-        select 
-			a.*
-		from attendance a
-        where AttendanceId = _AttendanceId;
+        select u.* from daily_attendance u
+		inner join (
+		SELECT *
+			 FROM
+			   JSON_TABLE(
+				 _AttendanceIds,
+				 "$[*]"
+				 COLUMNS(
+				   col INT PATH "$"
+				 )
+			   ) data
+		) t on u.AttendanceId = t.col;
         
         select * from employees
         where EmployeeUid = _EmployeeId;
         
-        select * from complaint_or_request
-        where TargetId = _AttendanceId;
+        select u.* from complaint_or_request u
+		inner join (
+		SELECT *
+			 FROM
+			   JSON_TABLE(
+				 _AttendanceIds,
+				 "$[*]"
+				 COLUMNS(
+				   col INT PATH "$"
+				 )
+			   ) data
+		) t on u.TargetId = t.col;
+        
 	End;
 end ;;
 DELIMITER ;
@@ -5046,8 +5115,6 @@ DELIMITER ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_attendance_get`(
-
-
 
     _EmployeeId bigint,
     _StartDate datetime,
@@ -5118,7 +5185,12 @@ Begin
 	from complaint_or_request
 	Where RequestTypeId = _RequestTypeId and EmployeeId = _EmployeeId
 	and datediff(_StartDate, AttendanceDate) <= 0;
-	
+    
+    /* set @projectid = 0;
+    select ProjectId into @projectid from project_members_detail 
+    where EmployeeId = _EmployeeId and IsActive = true;
+	select * from project where ProjectId in (1 , 2, @projectid);*/
+    
     drop table if exists employeeTempTable;
 End ;;
 DELIMITER ;
@@ -5241,7 +5313,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_attendance_get_byid`(
 Begin
 	Select 
 		a.*
-	from attendance a
+	from daily_attendance a
 	Where a.AttendanceId = _AttendanceId;
 End ;;
 DELIMITER ;
@@ -5574,11 +5646,11 @@ DELIMITER ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_attendance_requests_by_filter`(
     _ReportingManagerId bigint,
-    _ForMonth int,
-    _ForYear int
+    _FromDate datetime,
+    _ToDate datetime
     
     
-    # call sp_attendance_requests_by_filter (5, 11, 2023)
+    # call sp_attendance_requests_by_filter (2, '2023-03-31 18:30:00', '2023-04-29 18:30:00')
 )
 Begin
 	Begin
@@ -5603,26 +5675,25 @@ Begin
 			from employees
 			where EmployeeUid = _ReportingManagerId;
             
+            /*
 			set @prevMonth = _ForMonth;
 			if ( _ForMonth > 0) then
 			begin
 				set @prevMonth = (_ForMonth -1);
 			end;
 			end if;
+            */
                         
-			select a.AttendanceId, a.EmployeeId, a.AttendanceDetail, a.TotalDays, a.TotalWeekDays, a.DaysPending, a.TotalBurnedMinutes, a.ForYear, a.ForMonth,a.PendingRequestCount,
-			a.EmployeeName, a.Email, a.Mobile, e.FirstName, e.LastName, e.Email, e.Mobile,
+			select a.*, e.Mobile,
 			@ManagerName ManagerName, 
 			@ManagerMobile ManagerMobile, 
 			@ManagerEmail ManagerEmail,
             u.FilePath, u.FileExtension, u.FileName
-			from attendance a
+			from daily_attendance a
 			inner join employees e on a.EmployeeId = e.EmployeeUid
             left join userfiledetail u on u.FileOwnerId = a.EmployeeId and u.UserTypeId = 2 and u.FileName like '%profile%'
 			where e.ReportingManagerId = _ReportingManagerId
-			and ForYear = _ForYear 
-			and (ForMonth = _ForMonth
-			OR ForMonth = @prevMonth);    
+			and a.AttendanceDate between _FromDate and _ToDate;
         End;
 	End;
 End ;;
@@ -5643,8 +5714,10 @@ DELIMITER ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_attendance_update_request`(
     _AttendanceId bigint,
-    _AttendanceDetail Json,
-    _PendingRequestCount int,
+    _ReviewerId bigint,
+    _ReviewerEmail varchar(100),
+    _ReviewerName varchar(100),
+    _AttendanceStatus int,
     _UserId bigint,
     out _ProcessingResult varchar(100)
 )
@@ -5661,11 +5734,13 @@ Begin
 	end;
     
 	Set _ProcessingResult = '';
-	if exists (select 1 from attendance where AttendanceId = _AttendanceId) then
+	if exists (select 1 from daily_attendance where AttendanceId = _AttendanceId) then
 	Begin
-		update attendance Set
-			AttendanceDetail		=		_AttendanceDetail,
-            PendingRequestCount		=		_PendingRequestCount,
+		update daily_attendance Set
+			ReviewerId 				=		_ReviewerId,
+			ReviewerEmail			=		_ReviewerEmail,
+			ReviewerName			=		_ReviewerName,
+			AttendanceStatus		=		_AttendanceStatus,
             UpdatedBy 				=		_UserId,
             UpdatedOn				=		utc_timestamp()
 		where AttendanceId 			= 		_AttendanceId;    
@@ -7280,8 +7355,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_company_calendar_insupd`(
 
 	_CompanyCalendarId bigint,
     _CompanyId int,
-    _StartDate datetime,
-    _EndDate datetime,
+    _HolidayDate datetime,
     _EventName varchar(250),
     _IsHoliday bit,
     _IsHalfDay bit,
@@ -7311,11 +7385,15 @@ Begin
         begin
 			If not exists (Select 1 from company_calendar Where CompanyCalendarId = _CompanyCalendarId) then
 			Begin
+				set @companycalendarid = 0;
+                select CompanyCalendarId into @companycalendarid from company_calendar
+                order by CompanyCalendarId desc limit 1;
+                set @companycalendarid = @companycalendarid + 1;
+            
 				Insert into company_calendar Values (
-					default,
+					@companycalendarid,
 					_CompanyId ,
-					_StartDate,
-                    _EndDate,
+					_HolidayDate,
 					_EventName,
 					_IsHoliday,
 					_IsHalfDay,
@@ -7336,8 +7414,7 @@ Begin
 			Begin
 				Update company_calendar SET 
 					CompanyId				=			_CompanyId,
-					StartDate				=			_StartDate,
-                    Enddate					=			_Enddate,
+					HolidayDate				=			_HolidayDate,
 					EventName				=			_EventName,
 					IsHoliday				=			_IsHoliday,
 					IsHalfDay				=			_IsHalfDay,
@@ -7415,7 +7492,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `SP_company_calender_getby_filter`(
 	_pageIndex int,
 	_pageSize int
 
-
+	# call SP_company_calender_getby_filter('1=1', null, 1, 10)
 )
 Begin
     Begin
@@ -7432,15 +7509,14 @@ Begin
 
         Begin
 			If(_sortBy is NULL OR _sortBy = '') then
-				Set _sortBy = 'StartDate';
+				Set _sortBy = 'HolidayDate';
 			End if;
             Set @SelectQuery = CONCAT('Select * from (
 				Select 
 					Row_Number() over(Order by ', _sortBy, ') as RowIndex,
 					CompanyCalendarId, 
 					CompanyId ,
-					StartDate,
-                    EndDate,
+					HolidayDate,
 					EventName,
 					IsHoliday,
 					IsHalfDay,
@@ -8454,7 +8530,8 @@ DELIMITER ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_complaint_or_request_InsUpdate`(
 	_AttendanceId int,
-    _AttendanceDetail json,
+    _AttendanceStatus int,
+    _TotalMinutes int,
     _ComplaintOrRequestId int,
 	_RequestTypeId int,
 	_TargetId int,
@@ -8552,10 +8629,11 @@ Begin
 	End;
 	End if;
     
-    if exists (select 1 from attendance where AttendanceId = _AttendanceId) then
+    if exists (select 1 from daily_attendance where AttendanceId = _AttendanceId) then
     begin
 		update attendance set
-			AttendanceDetail = _AttendanceDetail
+			AttendanceStatus = 		_AttendanceStatus,
+            TotalMinutes	 =		_TotalMinutes
 		where AttendanceId = _AttendanceId;
     end;
     end if;
@@ -8585,10 +8663,12 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_complaint_or_request_update_stat
     _ManagerComments varchar(500),
     _StatusId int,
 	_AttendanceId int,
-    _AttendanceDetail json,
-	_UserId bigint  
-
-    
+    _AttendanceStatus int,
+	_ReviewerName varchar(100),
+    _UserId bigint,  
+    _ReviewerId bigint,
+    _ReviewerEmail varchar(100),
+    _TotalMinutes int
 )
 Begin
 	Declare Exit handler for sqlexception
@@ -8615,16 +8695,690 @@ Begin
 	End;
 	End if;
     
-	if exists (select 1 from attendance where AttendanceId = _AttendanceId) then
+	if exists (select 1 from daily_attendance where AttendanceId = _AttendanceId) then
 	Begin
-		update attendance Set
-			AttendanceDetail		=		_AttendanceDetail,
+		update daily_attendance Set
+			AttendanceStatus		=		_AttendanceStatus,
+            ReviewerName			=		_ReviewerName,
+            ReviewerId				=		_ReviewerId,
+            ReviewerEmail			=		_ReviewerEmail,
+            TotalMinutes			=		_TotalMinutes,
             UpdatedBy 				=		_UserId,
             UpdatedOn				=		utc_timestamp()
 		where AttendanceId 			= 		_AttendanceId;
 	End;
 	End if;
 End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_bet_dates` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_bet_dates`(
+  _FromDate datetime,
+  _ToDate datetime
+  
+  /*
+  
+	call sp_daily_attendance_bet_dates('2024-05-05 18:30:00', '2024-05-11 18:30:00')
+  
+*/
+  
+)
+BEGIN
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_daily_attendance_bet_dates', 1, 0, @Result);
+	end;
+
+	SELECT
+		AttendanceId,
+		EmployeeId,
+		EmployeeName,
+		EmployeeEmail,
+		ReviewerId,
+		ReviewerName,
+		ReviewerEmail,
+		ProjectId,
+		TaskId, 
+		TaskType,
+		LogOn,
+		LogOff,
+		TotalMinutes,
+		Comments, 
+		AttendanceStatus,
+		WeekOfYear,
+		AttendanceDate,
+		WorkTypeId,
+		IsOnLeave,
+		LeaveId,
+		Case 
+			When AttendanceDate = c.HolidayDate then true
+            Else false
+		End
+		IsHoliday,
+		Case 
+			When AttendanceDate = c.HolidayDate then c.CompanyCalendarId
+            Else 0
+		End
+        HolidayId
+	FROM daily_attendance a
+    left Join company_calendar c on AttendanceDate = HolidayDate
+	WHERE AttendanceDate between _FromDate And _ToDate;
+    
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_bet_dates_EmpId` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_bet_dates_EmpId`(
+  _FromDate datetime,
+  _ToDate datetime,
+  _EmployeeId bigint
+  
+  /*
+  
+	call sp_daily_attendance_bet_dates_EmpId('2024-05-05 18:30:00', '2024-05-11 18:30:00', 2)
+  
+*/
+  
+)
+BEGIN
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_daily_attendance_bet_dates_EmpId', 1, 0, @Result);
+	end;
+
+	SELECT
+		AttendanceId,
+		EmployeeId,
+		EmployeeName,
+		EmployeeEmail,
+		ReviewerId,
+		ReviewerName,
+		ReviewerEmail,
+		ProjectId,
+		TaskId, 
+		TaskType,
+		LogOn,
+		LogOff,
+		TotalMinutes,
+		Comments, 
+		AttendanceStatus,
+		WeekOfYear,
+		AttendanceDate,
+		WorkTypeId,
+		IsOnLeave,
+		LeaveId,
+		Case 
+			When AttendanceDate = c.HolidayDate then true
+            Else false
+		End
+		IsHoliday,
+		Case 
+			When AttendanceDate = c.HolidayDate then c.CompanyCalendarId
+            Else 0
+		End
+        HolidayId
+	FROM daily_attendance a
+    left Join company_calendar c on AttendanceDate = HolidayDate
+	WHERE AttendanceDate between _FromDate And _ToDate
+    And EmployeeId = _EmployeeId;
+    
+    set @workshiftid = 0;
+    select WorkShiftId into @workshiftid from employees where EmployeeUid = _EmployeeId;
+    
+    select * from work_shifts where WorkShiftId = @workshiftid;
+    
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_by_user` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_by_user`(
+  _FromDate datetime,
+  _ToDate datetime,
+  _EmployeeId bigint
+  
+  /*
+  
+	call sp_daily_attendance_by_user('2024-04-01 18:30:00', '2024-06-02 18:30:00', 2)
+  
+*/
+  
+)
+BEGIN
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_daily_attendance_by_user', 1, 0, @Result);
+	end;
+
+	SELECT
+		AttendanceId,
+		EmployeeId,
+		EmployeeName,
+		EmployeeEmail,
+		ReviewerId,
+		ReviewerName,
+		ReviewerEmail,
+		ProjectId,
+		TaskId, 
+		TaskType,
+		LogOn,
+		LogOff,
+		TotalMinutes,
+		Comments, 
+		AttendanceStatus,
+		WeekOfYear,
+		AttendanceDate,
+		WorkTypeId,
+		IsOnLeave,
+		LeaveId,
+		Case 
+			When AttendanceDate = c.HolidayDate then true
+            Else false
+		End
+		IsHoliday,
+		Case 
+			When AttendanceDate = c.HolidayDate then c.CompanyCalendarId
+            Else 0
+		End
+        HolidayId
+	FROM daily_attendance a
+    left Join company_calendar c on AttendanceDate = HolidayDate
+	WHERE AttendanceDate between _FromDate And _ToDate
+    And EmployeeId = _EmployeeId;
+    
+    
+    select * from leave_request_notification
+    where EmployeeId = _EmployeeId
+	and RequestStatusId = 9;
+    
+    select e.*, c.AttendanceSubmissionLimit from employees e 
+	left join company_setting c on c.CompanyId = e.CompanyId
+	Where e.EmployeeUid = _EmployeeId;
+    
+    select * from work_shifts w
+    where w.WorkShiftId = (Select WorkShiftId from employees where EmployeeUid = _EmployeeId); 
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_config_data` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_config_data`(
+  _EmployeeId bigint
+  
+  /*
+  
+	call sp_daily_attendance_config_data(2)
+  
+*/
+  
+)
+BEGIN
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_daily_attendance_config_data', 1, 0, @Result);
+	end;
+
+    select e.*, c.AttendanceSubmissionLimit 
+    from employees e 
+	left join company_setting c on c.CompanyId = e.CompanyId
+	Where e.EmployeeUid = _EmployeeId;
+    
+    select * from project p
+    inner join project_members_detail pm on pm.ProjectId = p.ProjectId
+    where pm.EmployeeId = _EmployeeId
+    and pm.IsActive = true;
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_filter` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_filter`(
+	_SearchString varchar(250),
+	_SortBy varchar(50),
+	_PageIndex int,
+	_PageSize int
+
+	/*
+		call sp_daily_attendance_filter("1=1 and  AttendanceDate between '2024-05-05 18:30:00' and '2024-05-11 18:30:00'", null, 1, 10);
+    */
+)
+Begin
+    Begin
+		Declare exit handler for sqlexception
+		Begin
+		
+			GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE,
+										@errorno = MYSQL_ERRNO,
+										@errortext = MESSAGE_TEXT;
+										
+			Set @Message = CONCAT('ERROR ', @errorno ,  ' (', @sqlstate, '): ', @errortext);
+			Call sp_LogException(@Message, '', 'sp_daily_attendance_filter', 1, 0, @Result);
+		End;
+
+        Begin
+			If(_sortBy is NULL OR _sortBy = '') then
+            begin
+				Set _sortBy = ' a.AttendanceDate DESC ';
+			end;
+			End if;
+			
+				Set @SelectQuery = CONCAT('Select * from (
+				Select 
+					Row_Number() over(Order by ', _sortBy, ') as RowIndex,
+					a.AttendanceId,
+					a.EmployeeId,
+					a.EmployeeName,
+					a.EmployeeEmail,
+					a.ReviewerId,
+					a.ReviewerName,
+					a.ReviewerEmail,
+					a.ProjectId,
+					a.TaskId, 
+					a.TaskType,
+					a.LogOn,
+					a.LogOff,
+					a.TotalMinutes,
+					a.Comments, 
+					a.AttendanceStatus,
+					a.WeekOfYear,
+					a.AttendanceDate,
+					a.WorkTypeId,
+					a.IsOnLeave,
+					a.LeaveId,
+					Case 
+						When a.AttendanceDate = c.HolidayDate then true
+						Else false
+					End
+					IsHoliday,
+					Case 
+						When a.AttendanceDate = c.HolidayDate then c.CompanyCalendarId
+						Else 0
+					End
+					HolidayId,
+                    Count(1) Over() as Total 
+				FROM daily_attendance a
+                left Join company_calendar c on a. AttendanceDate = c.HolidayDate
+				where ', _SearchString, '
+			)T where RowIndex between ', (_PageIndex - 1) * _PageSize + 1 ,' and ', (_PageIndex * _PageSize)) ;
+            			
+			prepare SelectQuery from @SelectQuery;
+			execute SelectQuery;	
+		End;
+	End;
+end ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_get` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_get`(
+
+    _EmployeeId bigint,
+    _FromDate datetime,
+    _ToDate datetime,
+    _CompanyId int
+    
+/*
+
+	call sp_daily_attendance_get(1, '2023-01-01', '2023-02-01', 1)
+
+*/    
+    
+)
+Begin
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Drop table if exists employeeTempTable;
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, @OperationStatus, 'sp_daily_attendance_get', 1, 0, @Result);
+	end;
+	
+	
+	Select 
+		a.*
+	from daily_attendance a   
+	Where a.AttendanceDate between _FromDate and _ToDate
+    and a.EmployeeId = _EmployeeId;	
+	
+    CREATE TEMPORARY TABLE IF NOT EXISTS employeeTempTable As
+	select e.*, c.AttendanceSubmissionLimit from employees e 
+	left join company_setting c on c.CompanyId = e.CompanyId
+	Where e.EmployeeUid = _EmployeeId;
+	
+    select * from employeeTempTable;
+    
+	select * from company_calendar where CompanyId = _CompanyId;
+    
+    set @workShiftId = (select WorkShiftId from employeeTempTable);
+    select * from work_shifts
+	where 
+	case
+		when @workShiftId > 0
+		then WorkShiftId = @workShiftId
+		else WorkShiftId = 1
+	end;
+    /*
+    Select 
+		ComplaintOrRequestId,
+		RequestTypeId,
+		TargetId,
+        TargetOffset,
+		EmployeeId, 
+		EmployeeName, 
+		Email, 
+		Mobile,
+		ManagerId,
+		ManagerName,
+		ManagerEmail,
+		ManagerMobile,
+		EmployeeMessage,
+		ManagerComments,
+		CurrentStatus,
+		RequestedOn,
+		AttendanceDate,
+		LeaveFromDate,
+		LeaveToDate,
+		Notify,
+		UpdatedOn
+	from complaint_or_request
+	Where RequestTypeId = _RequestTypeId and EmployeeId = _EmployeeId
+	and datediff(_AttendanceDate, AttendanceDate) <= 0;
+*/    
+    drop table if exists employeeTempTable;
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_ins_advance` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_ins_advance`(
+  _FromDate datetime,
+  _ToDate datetime,
+  _AttendanceStatus int
+  /*
+  
+	call sp_daily_attendance_ins_advance('2023-03-31 18:30:00', '2024-03-30 18:30:00', 0)
+  
+*/
+  
+)
+BEGIN
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_daily_attendance_ins_advance', 1, 0, @Result);
+	end;
+
+	Set @id = 0;
+    select AttendanceId into @id from daily_attendance order by AttendanceId desc limit 1;
+
+	INSERT INTO daily_attendance (
+		AttendanceId,
+		EmployeeId,
+		EmployeeName,
+		EmployeeEmail,
+		ReviewerId,
+		ReviewerName,
+		ReviewerEmail,
+		ProjectId,
+		TaskId,
+		TaskType,
+		LogOn,
+		LogOff,
+		TotalMinutes,
+		Comments,
+		AttendanceStatus,
+		WeekOfYear,
+		AttendanceDate,
+		WorkTypeId,
+        IsOnLeave,
+        LeaveId,
+		CreatedBy,
+		CreatedOn,
+		UpdatedBy,
+		UpdatedOn
+	)
+	SELECT
+		@id:= @id + 1,
+		e.EmployeeUid,
+		CONCAT(e.FirstName, ' ', e.LastName),
+		e.Email,
+		0 AS ReviewerId,
+		null,
+		null,
+		0 AS ProjectId,
+		0 AS TaskId,
+		0 AS TaskType,
+		'00:00:00' AS LogOn,
+		'00:00:00' AS LogOff,
+		0 AS TotalMinutes, -- Random number of minutes (0 to 480)
+		'[]' AS Comments,
+		_AttendanceStatus AS AttendanceStatus,
+		WEEKOFYEAR(DATE_ADD(_FromDate, INTERVAL seq - 1 DAY)) AS WeekOfYear,
+		DATE_ADD(_FromDate, INTERVAL seq - 1 DAY) AS AttendanceDate,
+		1,
+        false,
+        0,
+		1 AS CreatedBy,
+		NOW() AS CreatedOn,
+		NULL AS UpdatedBy,
+		NULL AS UpdatedOn
+	FROM employees e,
+		(SELECT (t3.n * 10000) + (t2.n * 1000) + (t1.n * 100) + (t0.n * 10) + (t4.n) + 1 AS seq
+		 FROM
+			 (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
+			  SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t0,
+			 (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
+			  SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t1,
+			 (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
+			  SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t2,
+			 (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
+			  SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t3,
+			 (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
+			  SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t4
+		) numbers
+	WHERE
+		DATE_ADD(_FromDate, INTERVAL seq - 1 DAY) <= _ToDate;
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_daily_attendance_upd_weekly` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_upd_weekly`(
+	_AttendanceId bigint,
+	_EmployeeId bigint,
+	_EmployeeName varchar(100),
+	_EmployeeEmail varchar(100),
+	_ReviewerId long,
+	_ReviewerName varchar(100),
+	_ReviewerEmail varchar(100),
+	_ProjectId int,
+	_TaskId int,
+	_TaskType int,
+	_LogOn varchar(10),
+	_LogOff varchar(10),
+	_TotalMinutes int,
+	_Comments json,
+	_AttendanceStatus int,
+	_WeekOfYear int,
+	_AttendanceDate Datetime,
+	_WorkTypeId int,
+	_IsOnLeave bit,
+	_LeaveId int,
+	_CreatedBy bigint,
+    out _ProcessingResult varchar(100)
+  
+  /*
+  
+	Set @result = '';
+	call sp_daily_attendance_upd_weekly(1, 5, 'Vivek Kumar', 'vivek@gmail.com', 2, 'Md Istiyak',
+    'istiyak.mi@gmail.com', 1, 1, 1,'09:00:00', '16:00:00', 480, '[]', 9, 15, '2024-04-10 18:30:00',
+    1, 0, 0, 1, @result);
+    select @result;
+  
+*/
+  
+)
+BEGIN
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_daily_attendance_upd_weekly', 1, 0, @Result);
+	end;
+
+	if exists(Select 1 from daily_attendance where AttendanceId = _AttendanceId) then
+    begin
+		Update daily_attendance
+		Set
+			EmployeeId          =       _EmployeeId,
+			EmployeeName        =       _EmployeeName,
+			EmployeeEmail       =       _EmployeeEmail,
+			ReviewerId          =       _ReviewerId,
+			ReviewerName        =       _ReviewerName,
+			ReviewerEmail       =       _ReviewerEmail,
+			ProjectId           =       _ProjectId,
+			TaskId              =       _TaskId,
+			TaskType            =       _TaskType,
+			LogOn               =       _LogOn,
+			LogOff              =       _LogOff,
+			TotalMinutes        =       _TotalMinutes,
+			Comments            =       _Comments,
+			AttendanceStatus    =       _AttendanceStatus,
+			WeekOfYear          =       _WeekOfYear,
+			AttendanceDate      =       _AttendanceDate,
+			WorkTypeId          =       _WorkTypeId,
+			IsOnLeave           =       _IsOnLeave,
+			LeaveId             =       _LeaveId,
+			CreatedBy           =       _CreatedBy,
+			CreatedOn           =       utc_timestamp(),
+			UpdatedBy           =       _CreatedBy,
+			UpdatedOn           =       utc_timestamp()
+		Where AttendanceId      =       _AttendanceId;
+        
+        Set _ProcessingResult = 'updated';
+	end;
+    end if;
+END ;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
@@ -10794,12 +11548,12 @@ Begin
             
             Set @groupId = 1;
             -- Set @groupId = 0;
--- 			select SalaryGroupId into @groupId from salary_group 
--- 			where _CTC >= MinAmount 
--- 			and _CTC < MaxAmount;
+            set @salarydetailId = 0;
+			select SalaryDetailId into @salarydetailId from employee_salary_detail 
+            where EmployeeId = @EmpId order by SalaryDetailId desc limit 1;
 
 			Call sp_employee_salary_detail_InsUpd(
-				_SalaryDetailId,
+				@salarydetailId,
 				@EmpId, 
                 _CTC, 
                 _GrossIncome, 
@@ -14018,6 +14772,138 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_employee_payroll_get_bet_dates` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_employee_payroll_get_bet_dates`(
+    _FromDate datetime,
+	_ToDate datetime,
+    _OffsetIndex int,
+    _PageSize int,
+    _CompanyId int
+
+/*
+
+	call sp_employee_payroll_get_bet_dates('2023-03-25 00:00:00', '2023-04-30 00:00:00', 0, 10, 1)
+
+*/
+)
+Begin
+	Declare exit handler for sqlexception
+	Begin
+	
+		GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		drop table if exists employee_attendance_page;
+		Set @Message = CONCAT('ERROR ', @errorno ,  ' (', @sqlstate, '): ', @errortext);
+		Call sp_LogException(@Message, '', 'sp_employee_payroll_get_bet_dates', 1, 0, @Result);
+	End;
+    
+    drop table if exists employee_attendance_page;
+    
+	Set @ForYear  = Year(_ToDate);
+	Set @ForMonth = Month(_ToDate);
+	Set @PreviousYear = Year(_FromDate);
+	Set @PreviousMonth = Month(_FromDate);
+    
+    set @payrollBarrierDay = 0;
+    select ExcludePayrollFromJoinDate into @payrollBarrierDay from company_setting
+	where CompanyId = _CompanyId;
+        
+    create temporary table if not exists employee_attendance_page as (
+		select 
+			e.EmployeeUid as EmployeeId,
+            Concat(e.FirstName, ' ', e.LastName) as EmployeeName,
+            e.Email,
+			s.CompleteSalaryDetail, 
+			s.CTC, 
+			s.GroupId, 
+			s.TaxDetail,
+			e.CompanyId,
+            e.WorkShiftId,
+			e.CreatedOn as Doj
+		from employees e
+		inner join employee_salary_detail s on s.EmployeeId = e.EmployeeUid
+		Limit _PageSize Offset _OffsetIndex
+	);
+    
+    select e.* from employee_attendance_page e
+    where e.Doj <= _ToDate;
+    
+	select 
+		d.*, e.Email
+	from employee_declaration d
+	inner join employee_attendance_page e on e.EmployeeId = d.EmployeeId
+    where d.DeclarationFromYear = @ForYear;
+    
+    select l.* from leave_request_notification l
+    inner join employee_attendance_page e on e.EmployeeId = l.EmployeeId;
+    
+	select * from hike_bonus_salary_adhoc h
+	where (h.ForYear = @ForYear and h.ForMonth = @ForMonth 
+    or h.ForYear = @PreviousYear and h.ForMonth = @PreviousMonth)
+	and h.CompanyId = _CompanyId and h.ProgressState = 9;
+    
+	select EmployeeUid from employees 
+		where 
+	case
+		when Month(CreatedOn) = @ForMonth and Year(CreatedOn) = @ForYear
+		then Day(CreatedOn) > @payrollBarrierDay
+		else 1=0
+	end;
+    
+    SELECT
+		a.AttendanceId,
+		a.EmployeeId,
+		a.EmployeeName,
+		a.EmployeeEmail,
+		a.ReviewerId,
+		a.ReviewerName,
+		a.ReviewerEmail,
+		a.ProjectId,
+		a.TaskId, 
+		a.TaskType,
+		a.LogOn,
+		a.LogOff,
+		a.TotalMinutes,
+		a.Comments, 
+		a.AttendanceStatus,
+		a.WeekOfYear,
+		a.AttendanceDate,
+		a.WorkTypeId,
+		a.IsOnLeave,
+		a.LeaveId,
+		Case 
+			When a.AttendanceDate = c.HolidayDate then true
+            Else false
+		End
+		IsHoliday,
+		Case 
+			When a.AttendanceDate = c.HolidayDate then c.CompanyCalendarId
+            Else 0
+		End
+        HolidayId
+	FROM daily_attendance a
+    inner join employee_attendance_page e on e.EmployeeId = a.EmployeeId
+    left Join company_calendar c on a.AttendanceDate = c.HolidayDate
+	WHERE a.AttendanceDate between _FromDate And _ToDate;
+
+    drop table if exists employee_attendance_page;
+end ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_employee_payroll_get_by_page` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -16582,6 +17468,49 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_get_leave_plan_type_by_leaveid` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `sp_get_leave_plan_type_by_leaveid`(
+
+  _LeaveId int
+  
+  /*
+  
+	call sp_get_leave_plan_type_by_leaveid('2024-05-05 18:30:00', '2024-05-11 18:30:00')
+  
+*/
+  
+)
+BEGIN
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_daily_attendance_by_user', 1, 0, @Result);
+	end;
+
+	set @leaveplantypeid = 0;
+    select LeaveTypeId into @leaveplantypeid from leave_request_notification
+	where RequestStatusId = 9 and LeaveRequestNotificationId = _LeaveId;
+    
+    select * from leave_plans_type where LeavePlanTypeId = @leaveplantypeid;
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_gstdetail_insupd` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -17373,11 +18302,11 @@ DELIMITER ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_leave_and_lop_get`(
-	_Year int,
-    _Month int,
+	_FromDate datetime,
+    _ToDate datetime,
     _CompanyId int
 
-
+	# call sp_leave_and_lop_get('2023-04-01 18:30:00', '2023-04-30 18:30:00', 1)
 )
 Begin
 	Declare Exit handler for sqlexception
@@ -17394,8 +18323,8 @@ Begin
         left join leave_plans_type l on l.LeavePlanTypeId = n.LeaveTypeId
         left join employees e on e.EmployeeUid = n.EmployeeId;
 	
-		select * from attendance
-		where ForYear = _Year and ForMonth = _Month;
+		select * from daily_attendance
+		where AttendanceDate between _FromDate And _ToDate;
         
         select * from attendance_setting where CompanyId = _CompanyId;
     
@@ -19787,12 +20716,10 @@ DELIMITER ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_leave_timesheet_and_attendance_requests_get`(
 
-
-
     _ManagerId bigint,
     _StatusId int,
-	_ForYear int,
-	_ForMonth int
+	_FromDate datetime,
+	_ToDate datetime
 )
 Begin
 	Begin
@@ -19851,30 +20778,23 @@ Begin
         end;
         end if;
         
+        /*
         set @prevMonth = _ForMonth;
         if ( _ForMonth > 0) then
         begin
 			set @prevMonth = (_ForMonth -1);
         end;
         end if;
-
-		select a.AttendanceId, a.EmployeeId, a.AttendanceDetail, a.TotalDays, a.TotalWeekDays, a.DaysPending, a.TotalBurnedMinutes, a.ForYear, a.ForMonth,a.PendingRequestCount,
-        a.EmployeeName, a.Email, a.Mobile, e.FirstName, e.LastName, e.Email, e.Mobile,
+		*/
+        
+		select a.*, e.FirstName, e.LastName, e.Email, e.Mobile,
 		@ManagerName ManagerName, 
 		@ManagerMobile ManagerMobile, 
 		@ManagerEmail ManagerEmail
-        from attendance a
+        from daily_attendance a
         inner join employees e on a.EmployeeId = e.EmployeeUid
         where e.ReportingManagerId = _ManagerId
-        and 
-        case
-			when _StatusId = 2
-            then a.PendingRequestCount > 0
-            else 1=1
-		end
-        and ForYear = _ForYear 
-        and (ForMonth = _ForMonth
-        OR ForMonth = @prevMonth);
+        and a.AttendanceDate between _FromDate and _ToDate;
         
 		select t.* , e.FirstName, e.LastName, e.Email, e.Mobile, c.ClientName,
 		@ManagerName ManagerName, 
@@ -19884,7 +20804,7 @@ Begin
         inner join employees e on t.EmployeeId = e.EmployeeUid
         inner join clients c on t.ClientId = c.ClientId
         where e.ReportingManagerId = _ManagerId
-        and ForYear = _ForYear;
+        and ForYear = Year(_FromDate);
 	End;
 End ;;
 DELIMITER ;
@@ -19908,8 +20828,8 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_leave_timesheet_and_attendance_r
 
     _ManagerId bigint,
     _StatusId int,
-	_ForYear int,
-	_ForMonth int
+	_FromDate datetime,
+	_ToDate datetime
 )
 Begin
 	Begin
@@ -19941,24 +20861,24 @@ Begin
         end;
         end if;
         
+        /*
         set @prevMonth = _ForMonth;
         if ( _ForMonth > 0) then
         begin
 			set @prevMonth = (_ForMonth -1);
         end;
         end if;
+        */
         
-		select a.* , e.FirstName, e.LastName, e.Email, e.Mobile from attendance a
+		select a.* , e.FirstName, e.LastName, e.Email, e.Mobile from daily_attendance a
         inner join employees e on a.EmployeeId = e.EmployeeUid
         where (e.ReportingManagerId = _ManagerId Or e.ReportingManagerId = @AdminAccessId)
-        and ForYear = _ForYear 
-        and (ForMonth = _ForMonth
-        OR ForMonth = @prevMonth);
+        and a.AttendanceDate between _FromDate and _ToDate;
         
 		select t.* , e.FirstName, e.LastName, e.Email, e.Mobile from employee_timesheet t
         inner join employees e on t.EmployeeId = e.EmployeeUid
         where (e.ReportingManagerId = _ManagerId Or e.ReportingManagerId = @AdminAccessId)
-        and ForYear = _ForYear;
+        and ForYear = Year(_FromDate);
 	End;
 End ;;
 DELIMITER ;
@@ -24783,7 +25703,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_project_member_get_projects`(
     _ProjectId int
     
     
-	# call sp_project_member_get_projects(2, 1)
+	# call sp_project_member_get_projects(4, 1)
 
 )
 Begin
@@ -24827,14 +25747,13 @@ Begin
     inner join employees e on e.EmployeeUid = s.EmployeeId
     left join employee_performance epf on epf.EmployeeId = pm.EmployeeId
     where pm.ProjectId = _ProjectId and pm.IsActive = true;
-    
 
         
     select pa.* from project_appraisal pa
     inner join project p on pa.ProjectId = p.ProjectId
     where p.ProjectManagerId = _EmployeeId;
     
-    select a.*, r.ReactedOn, r.Status from appraisal_review_detail a
+    select a.*, r.ReactedOn, r.Status as AppraisalStatus from appraisal_review_detail a
     inner join appraisal_review_finalizer_status r on r.AppraisalReviewId = a.AppraisalReviewId
     where r.ReviwerId = _EmployeeId and a.ProjectId = _ProjectId; 
     
@@ -29042,7 +29961,7 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2024-05-23 16:39:48
+-- Dump completed on 2024-06-01  6:53:16
 
 
 INSERT INTO `accessibility_description` VALUES (1,'Complete access. (read, udpate and detele)'),(2,'Only read access.'),(3,'Read and update access.');
@@ -29051,7 +29970,7 @@ INSERT INTO `accesslevel` VALUES (1,'Admin','Having all rights','2022-10-17 00:0
 
 INSERT INTO `application_setting` VALUES (1,1,1,2,'{\"PasswordMinLength\":8,\"PasswordMaxLength\":16,\"PasswordRegexFormula\":1,\"TemporaryPasswordExpiryTimeInSeconds\":3600}');
 
-INSERT INTO `approval_chain_detail` VALUES (1,2,19,_binary '\0','2023-10-13 09:30:19',2),(2,2,2,_binary '','2023-10-13 09:30:19',2),(3,2,1,_binary '\0','2023-10-13 09:30:19',2),(4,2,19,_binary '\0','2024-03-23 14:30:22',2);
+INSERT INTO `approval_chain_detail` VALUES (1,1,19,_binary '\0','2023-10-13 09:30:19',2),(2,1,2,_binary '','2023-10-13 09:30:19',2),(3,1,1,_binary '\0','2023-10-13 09:30:19',2),(4,1,19,_binary '\0','2024-03-23 14:30:22',2);
 
 INSERT INTO `approval_work_flow` VALUES (1,'DEFAULT FLOW','IF EMPLOYEE DOESN\'T ASSOCIATED WITH ANY PROJECT THEN THIS FOLLOW WILL BE USED AS A DEFAULT WORK FLOW. IN THIS FOLOW, EMPLOYEE HAS ANY REPORTING MANAGER ASSIGN THEN ALL THE REQUEST WILL GO TO THE REPORTING MANAGER OTHER WISE IT WILL REDIRECT TO THE HEAD OF HR.',2,_binary '\0',10,0,_binary '\0','[]',1,0,'2024-03-23 14:30:22',NULL);
 
