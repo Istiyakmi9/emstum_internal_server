@@ -2483,6 +2483,7 @@ CREATE TABLE `performance_objective` (
   `ProgressMeassureType` int DEFAULT NULL,
   `StartValue` decimal(10,2) DEFAULT NULL,
   `TargetValue` decimal(10,2) DEFAULT NULL,
+  `IsDefaultObjective` bit(1) DEFAULT NULL,
   `CompanyId` int DEFAULT NULL,
   `CreatedBy` bigint DEFAULT NULL,
   `UpdatedBy` bigint DEFAULT NULL,
@@ -3483,14 +3484,6 @@ DELIMITER ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_AccessLevel_InsUpd`(
-	
-/*	
-
-	Call sp_AccessLevel_InsUpd(2, 'User', 'View or edit only personal detail.', @Result);
-	Select @Result;
-
-*/
-
 	_AccessLevelId varchar(50),
     _RoleName varchar(100),
     _AccessCodeDefination varchar(100),
@@ -3804,14 +3797,6 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_admin_dashboard_get`(
     _ForYear int,
     _ForMonth int,
     _Period int
-    
-/*
-
-	call sp_admin_dashboard_get(2024, 4, 30)
-
-*/    
-    
-    
 )
 Begin
 	Declare Exit handler for sqlexception
@@ -8724,16 +8709,9 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_bet_dates`(
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_bet_dates`(
   _FromDate datetime,
-  _ToDate datetime
-  
-  /*
-  
-	call sp_daily_attendance_bet_dates('2024-05-05 18:30:00', '2024-05-11 18:30:00')
-  
-*/
-  
+  _ToDate datetime  
 )
 BEGIN
 	Declare Exit handler for sqlexception
@@ -8797,16 +8775,10 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_bet_dates_EmpId`(
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_bet_dates_EmpId`(
   _FromDate datetime,
   _ToDate datetime,
   _EmployeeId bigint
-  
-  /*
-  
-	call sp_daily_attendance_bet_dates_EmpId('2024-05-05 18:30:00', '2024-05-11 18:30:00', 2)
-  
-*/
   
 )
 BEGIN
@@ -8877,17 +8849,10 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_by_user`(
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_by_user`(
   _FromDate datetime,
   _ToDate datetime,
-  _EmployeeId bigint
-  
-  /*
-  
-	call sp_daily_attendance_by_user('2024-04-01 18:30:00', '2024-06-02 18:30:00', 2)
-  
-*/
-  
+  _EmployeeId bigint  
 )
 BEGIN
 	Declare Exit handler for sqlexception
@@ -8963,15 +8928,8 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_config_data`(
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_config_data`(
   _EmployeeId bigint
-  
-  /*
-  
-	call sp_daily_attendance_config_data(2)
-  
-*/
-  
 )
 BEGIN
 	Declare Exit handler for sqlexception
@@ -8989,10 +8947,18 @@ BEGIN
 	left join company_setting c on c.CompanyId = e.CompanyId
 	Where e.EmployeeUid = _EmployeeId;
     
-    select * from project p
-    inner join project_members_detail pm on pm.ProjectId = p.ProjectId
-    where pm.EmployeeId = _EmployeeId
-    and pm.IsActive = true;
+    if exists (select 1 from project_members_detail where EmployeeId = _EmployeeId and IsActive = true) then
+    begin
+		select * from project p
+		inner join project_members_detail pm on pm.ProjectId = p.ProjectId
+		where pm.EmployeeId = _EmployeeId
+		and pm.IsActive = true;
+    end;
+    else
+    begin
+		select * from project where ProjectId = 1;
+    end;
+    end if;
 END ;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
@@ -9014,10 +8980,6 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_filter`(
 	_SortBy varchar(50),
 	_PageIndex int,
 	_PageSize int
-
-	/*
-		call sp_daily_attendance_filter("1=1 and  AttendanceDate between '2024-05-05 18:30:00' and '2024-05-11 18:30:00'", null, 1, 10);
-    */
 )
 Begin
     Begin
@@ -9104,13 +9066,6 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_get`(
     _FromDate datetime,
     _ToDate datetime,
     _CompanyId int
-    
-/*
-
-	call sp_daily_attendance_get(1, '2023-01-01', '2023-02-01', 1)
-
-*/    
-    
 )
 Begin
 	Declare Exit handler for sqlexception
@@ -9192,16 +9147,10 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_ins_advance`(
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_ins_advance`(
   _FromDate datetime,
   _ToDate datetime,
   _AttendanceStatus int
-  /*
-  
-	call sp_daily_attendance_ins_advance('2023-03-31 18:30:00', '2024-03-30 18:30:00', 0)
-  
-*/
-  
 )
 BEGIN
 	Declare Exit handler for sqlexception
@@ -9256,9 +9205,13 @@ BEGIN
 		0 AS TaskType,
 		'00:00:00' AS LogOn,
 		'00:00:00' AS LogOff,
-		0 AS TotalMinutes, -- Random number of minutes (0 to 480)
+		480 AS TotalMinutes, -- Random number of minutes (0 to 480)
 		'[]' AS Comments,
-		_AttendanceStatus AS AttendanceStatus,
+        Case
+			When weekday(DATE_ADD(_FromDate, INTERVAL seq - 0 DAY)) = 6
+            then 3
+            else _AttendanceStatus
+		End AS AttendanceStatus,
 		WEEKOFYEAR(DATE_ADD(_FromDate, INTERVAL seq - 1 DAY)) AS WeekOfYear,
 		DATE_ADD(_FromDate, INTERVAL seq - 1 DAY) AS AttendanceDate,
 		1,
@@ -9300,7 +9253,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_upd_weekly`(
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_attendance_upd_weekly`(
 	_AttendanceId bigint,
 	_EmployeeId bigint,
 	_EmployeeName varchar(100),
@@ -9323,17 +9276,6 @@ CREATE DEFINER=`root`@`%` PROCEDURE `sp_daily_attendance_upd_weekly`(
 	_LeaveId int,
 	_CreatedBy bigint,
     out _ProcessingResult varchar(100)
-  
-  /*
-  
-	Set @result = '';
-	call sp_daily_attendance_upd_weekly(1, 5, 'Vivek Kumar', 'vivek@gmail.com', 2, 'Md Istiyak',
-    'istiyak.mi@gmail.com', 1, 1, 1,'09:00:00', '16:00:00', 480, '[]', 9, 15, '2024-04-10 18:30:00',
-    1, 0, 0, 1, @result);
-    select @result;
-  
-*/
-  
 )
 BEGIN
 	Declare Exit handler for sqlexception
@@ -14845,8 +14787,10 @@ Begin
 	inner join employee_attendance_page e on e.EmployeeId = d.EmployeeId
     where d.DeclarationFromYear = @ForYear;
     
-    select l.* from leave_request_notification l
-    inner join employee_attendance_page e on e.EmployeeId = l.EmployeeId;
+    select n.*, l.IsPaidLeave from leave_request_notification n
+    inner join leave_plans_type l on l.LeavePlanTypeId = n.LeaveTypeId
+    inner join employee_attendance_page e on e.EmployeeId = n.EmployeeId
+    where n.RequestStatusId = (select ItemStatusId from itemstatus where Status = 'Approved');
     
 	select * from hike_bonus_salary_adhoc h
 	where (h.ForYear = @ForYear and h.ForMonth = @ForMonth 
@@ -17478,7 +17422,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `sp_get_leave_plan_type_by_leaveid`(
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_get_leave_plan_type_by_leaveid`(
 
   _LeaveId int
   
@@ -20465,6 +20409,103 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_leave_request_notification_daily_attendance_insupdate` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_leave_request_notification_daily_attendance_insupdate`(
+
+	_LeaveRequestNotificationId bigint,
+    _LeaveRequestId bigint,
+    _UserMessage text,
+    _EmployeeId bigint,
+    _ReportingManagerId bigint,
+    _ProjectId bigint,
+    _ProjectName varchar(150),
+    _FromDate Datetime,
+    _ToDate Datetime,
+    _NumOfDays decimal(10, 2),
+    _RequestStatusId int,
+    _NoOfApprovalsRequired int,
+    _ReporterDetail json,
+    _FileIds json,
+    _FeedBack json,
+    _LeaveTypeName varchar(100),
+    _AutoActionAfterDays int,
+    _IsAutoApprovedEnabled bit,
+    _LeaveTypeId int,
+    _AdminId bigint,
+    out _ProcessingResult varchar(100)
+)
+Begin
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Set _ProcessingResult = @Message;    
+		
+		RollBack;
+		Call sp_LogException (@Message, '', 'sp_leave_request_notification_attendance_insupdate', 1, 0, @Result);
+	end;
+	
+	Start Transaction;
+	Begin 
+		set @leavenotificationId = 0;
+		select LeaveRequestNotificationId from leave_request_notification order by LeaveRequestNotificationId desc limit 1 into @leavenotificationId;
+		set @leavenotificationId = @leavenotificationId + 1;
+		
+		Insert into leave_request_notification Values (
+			@leavenotificationId,
+			_LeaveRequestId,
+			_UserMessage,
+			_EmployeeId,
+			_ReportingManagerId,
+			_ProjectId,
+			_ProjectName,
+			_FromDate,
+			_ToDate,
+			_NumOfDays,
+			_RequestStatusId,
+			_NoOfApprovalsRequired,
+			_ReporterDetail,
+			_FileIds,
+			_FeedBack,
+			_LeaveTypeName,
+			_AutoActionAfterDays,
+			_IsAutoApprovedEnabled,
+			_LeaveTypeId,
+			now(),
+			now(),
+			_AdminId,
+			_AdminId
+		);
+		
+        set @attendanceId = 0;
+		select AttendanceId into @attendanceId from daily_attendance
+		where EmployeeId = _EmployeeId and AttendanceDate between _FromDate and _ToDate;
+
+		Update daily_attendance SET 
+			IsOnLeave				=			true,
+			LeaveId					=			@leavenotificationId
+		where AttendanceId = @attendanceId;
+            
+		Set _ProcessingResult = @leavenotificationId;
+	COMMIT;
+	End;
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_leave_request_notification_get_byId` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -23322,8 +23363,8 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_payslip_detail`(
 	# call sp_payslip_detail(2, 'Company Primary Logo', 1, 2024);
     _EmployeeId bigint,
     _FileRole varchar(100),
-    _ForMonth int,
-    _ForYear int
+    _FromDate datetime,
+    _ToDate datetime
 )
 Begin
 		Begin
@@ -23366,10 +23407,9 @@ Begin
             select * from employee_salary_detail
             where EmployeeId = _EmployeeId;
             
-            select * from attendance a
+            select * from daily_attendance a
             where a.EmployeeId = _EmployeeId
-            and a.ForMonth = _ForMonth
-			and a.ForYear = _ForYear;
+            and a.AttendanceDate between _FromDate and _ToDate;
             
             set @stateName = '';
             select State into @stateName from company where CompanyId = @companyId;
@@ -23389,6 +23429,13 @@ Begin
 			from company_files
 			where CompanyId = @companyId
 			and FileRole = _FileRole;
+
+			select n.* from leave_request_notification n
+            inner join leave_plans_type l on n.LeaveTypeId = l.LeavePlanTypeId
+            where n.EmployeeId = _EmployeeId 
+            and l.IsPaidLeave = true
+            and n.RequestStatusId = (select ItemStatusId from itemstatus Where Status = 'Approved');
+
 		End;
 	End ;;
 DELIMITER ;
@@ -23599,6 +23646,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_performance_objective_insupd`(
     _ProgressMeassureType int,
     _StartValue DECIMAL(10,2),
     _TargetValue DECIMAL(10,2),
+	_IsDefaultObjective bit,
     _CompanyId int,
     _AdminId bigint,
     out _ProcessingResult varchar(100)
@@ -23636,6 +23684,7 @@ Begin
 				_ProgressMeassureType,
 				_StartValue,
 				_TargetValue,
+				_IsDefaultObjective,
 				_CompanyId,
                 _AdminId,
                 null,
@@ -23659,6 +23708,7 @@ Begin
 				ProgressMeassureType			=				_ProgressMeassureType,
 				StartValue						=				_StartValue,
 				TargetValue						=				_TargetValue,
+				IsDefaultObjective				=				_IsDefaultObjective,
                 UpdatedBy						=				_AdminId,
                 UpdatedOn						=				utc_timestamp()
 			where 	ObjectiveId 				= 				_ObjectiveId;
@@ -30017,3 +30067,5 @@ INSERT INTO `leave_plans_type` VALUES (1,'SL','SICK LEAVE','SICK LEAVE',12,_bina
 INSERT INTO `role_accessibility_mapping` VALUES (1,2,2,0),(2,2,4,0),(3,2,5,0),(4,2,7,0),(5,2,9,1),(6,2,10,0),(7,2,11,0),(8,2,12,1),(9,2,14,1),(10,2,15,1),(11,2,17,1),(12,2,18,1),(13,2,20,1),(14,2,21,1),(15,2,22,1),(16,2,23,1),(17,2,24,0),(18,2,26,1),(19,2,29,0),(20,2,30,0),(21,2,31,0),(22,2,32,1),(23,2,33,0),(24,2,34,1),(25,2,35,0),(26,2,36,0),(27,2,38,0),(28,2,39,0),(29,2,40,0),(30,2,41,1),(31,2,42,1),(32,2,43,1),(33,2,44,0),(34,2,45,1),(35,2,46,0),(36,2,47,0),(37,2,48,0),(38,2,49,0),(39,2,52,0),(40,2,1,1),(41,2,8,1),(42,2,13,1),(43,2,19,1),(44,2,25,1),(45,2,28,1),(46,2,37,1),(47,2,50,1),(48,2,51,1),(49,3,2,0),(50,3,4,0),(51,3,5,0),(52,3,7,0),(53,3,9,1),(54,3,10,0),(55,3,11,0),(56,3,12,1),(57,3,14,1),(58,3,15,1),(59,3,17,1),(60,3,18,1),(61,3,20,1),(62,3,21,1),(63,3,22,1),(64,3,23,1),(65,3,24,1),(66,3,26,1),(67,3,29,0),(68,3,30,0),(69,3,31,0),(70,3,32,1),(71,3,33,0),(72,3,34,1),(73,3,35,0),(74,3,36,0),(75,3,38,0),(76,3,39,0),(77,3,40,0),(78,3,41,1),(79,3,42,1),(80,3,43,1),(81,3,44,0),(82,3,45,1),(83,3,46,0),(84,3,47,1),(85,3,48,0),(86,3,49,0),(87,3,52,0),(88,3,1,1),(89,3,8,1),(90,3,13,1),(91,3,19,1),(92,3,25,1),(93,3,28,1),(94,3,37,1),(95,3,50,1),(96,3,51,1);
 
 INSERT INTO `pf_esi_setting` VALUES (1,1,_binary '\0',_binary '\0',_binary '\0',_binary '\0',_binary '\0',0,_binary '\0',_binary '\0',_binary '\0',_binary '\0',21000,0.75,3.25,_binary '\0',_binary '\0',_binary '\0',_binary '\0',_binary '\0',_binary '\0',_binary '\0',_binary '\0',_binary '\0','2024-05-11 00:00:00',NULL,1,NULL);
+
+INSERT INTO `project` VALUES (1,'UNASSIGNED PROJECT','Unassigned Project','2023-12-31 18:30:00',NULL,_binary '\0',0,0,NULL,NULL,NULL,NULL,NULL,1,0,_binary '',0,_binary '',0,_binary '',0,_binary '',1,1,'2024-06-05 06:53:36','2024-06-05 06:53:36');
