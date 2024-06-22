@@ -258,7 +258,7 @@ public class BuildSystemService {
 
     private String getDatabaseName(RegistrationDetail registrationDetail) {
         // Remove all whitespaces
-        String organizationName = registrationDetail.getCompanyName().replaceAll("\\s", "");
+        String organizationName = registrationDetail.getCompanyName().replaceAll("[.\\s]", "");
         return "emstum_" + organizationName.toLowerCase() + "_" + LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("dd_MM_yy"));
     }
