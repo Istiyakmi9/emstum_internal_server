@@ -813,6 +813,7 @@ CREATE TABLE `company_setting` (
   `LeaveAccrualRunCronDayOfMonth` int DEFAULT NULL,
   `EveryMonthLastDayOfDeclaration` int DEFAULT NULL,
   `IsJoiningBarrierDayPassed` bit(1) DEFAULT b'0',
+  `TimeDifferences` varchar(10) DEFAULT '0:00',
   PRIMARY KEY (`SettingId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -8418,6 +8419,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_company_setting_insupd`(
     _NoticePeriodInProbation int,
     _ExcludePayrollFromJoinDate int,
 	_AdminId bigint,
+	_TimeDifferences varchar(10),
     out _ProcessingResult varchar(50)
 )
 Begin
@@ -8452,7 +8454,8 @@ Begin
                 _TimezoneName,
 				_LeaveAccrualRunCronDayOfMonth,
 				_EveryMonthLastDayOfDeclaration,
-                _IsJoiningBarrierDayPassed
+                _IsJoiningBarrierDayPassed,
+				_TimeDifferences
             );
             set _ProcessingResult = 'inserted';
         end;
@@ -8472,7 +8475,8 @@ Begin
 					EveryMonthLastDayOfDeclaration		=		_EveryMonthLastDayOfDeclaration,
                     IsJoiningBarrierDayPassed			=		_IsJoiningBarrierDayPassed,
                     ExcludePayrollFromJoinDate			=		ExcludePayrollFromJoinDate,
-					NoticePeriodInProbation				=		_NoticePeriodInProbation
+					NoticePeriodInProbation				=		_NoticePeriodInProbation,
+					TimeDifferences						=		_TimeDifferences
 			where 	SettingId 							= 		_SettingId;
 			
 			set _ProcessingResult = 'updated';
@@ -19189,12 +19193,14 @@ Begin
     else 
     begin
 		select 
-            e.EmployeeUid, 
-            e.Email, 
-            concat(e.FirstName, ' ', e.LastName) Name, 
-            true IsRequired  
-		from employees e		
-		where e.EmployeeUid = _EmployeeId;
+			emp.EmployeeUid as EmployeeId, 
+			emp.Email, 
+			concat(emp.FirstName, ' ', emp.LastName) Name, 
+			e.IsRequired 
+		from approval_chain_detail e
+		inner join employees emp on emp.DesignationId = e.AssignieId
+		where e.ApprovalWorkFlowId = 1 
+		and emp.EmployeeUid = (select ReportingManagerId from employees where EmployeeUid = _EmployeeId);
     end;
     end if;
 End ;;
@@ -19959,6 +19965,36 @@ Begin
 				UpdatedOn						=			utc_timestamp(),
 				UpdatedBy						=			_ReportingManagerId
 			Where 	LeaveRequestNotificationId 	= 			_LeaveRequestNotificationId;
+
+			 if (_RequestStatusId = 9) then
+            begin
+				Set @fromDate = null, @toDate = null;
+				select FromDate, ToDate into @fromDate, @toDate from leave_request_notification
+				where LeaveRequestNotificationId = _LeaveRequestNotificationId;
+				
+				while @fromDate <= @toDate do
+				begin
+					Set @attendaceId = 0, @attendacneStatus = 0;
+					
+					Select AttendanceId, AttendanceStatus into @attendaceId, @attendacneStatus 
+					from daily_attendance where AttendanceDate = @fromDate
+                    and EmployeeId = _EmployeeId;
+                    
+					if (@attendacneStatus != 3) then
+					begin
+						Update daily_attendance
+						set AttendanceStatus = 20,
+						IsOnLeave = true,
+						LeaveId = _LeaveRequestNotificationId
+						where AttendanceId = @attendaceId;
+					end;
+					end if;
+					
+					Set @fromDate = @fromDate + 1;
+				end;
+				end while;
+			end;
+            end if;
 		End;
 		End if;
 	
@@ -22331,7 +22367,8 @@ Begin
                     _TimezoneName,
                     2,
                     20,
-                    false
+                    false,
+					'-05:30'
                 );
 
 				update org_hierarchy
@@ -30568,7 +30605,7 @@ INSERT INTO `accesslevel` VALUES (1,'Admin','Having all rights','2022-10-17 00:0
 
 INSERT INTO `application_setting` VALUES (1,1,1,2,'{\"PasswordMinLength\":8,\"PasswordMaxLength\":16,\"PasswordRegexFormula\":1,\"TemporaryPasswordExpiryTimeInSeconds\":3600}');
 
-INSERT INTO `approval_chain_detail` VALUES (1,1,19,_binary '\0','2023-10-13 09:30:19',2),(2,1,2,_binary '','2023-10-13 09:30:19',2),(3,1,1,_binary '\0','2023-10-13 09:30:19',2),(4,1,19,_binary '\0','2024-03-23 14:30:22',2);
+INSERT INTO `approval_chain_detail` VALUES (1,1,9,_binary '\1','2023-10-13 09:30:19',2);
 
 INSERT INTO `approval_work_flow` VALUES (1,'DEFAULT FLOW','IF EMPLOYEE DOESN\'T ASSOCIATED WITH ANY PROJECT THEN THIS FOLLOW WILL BE USED AS A DEFAULT WORK FLOW. IN THIS FOLOW, EMPLOYEE HAS ANY REPORTING MANAGER ASSIGN THEN ALL THE REQUEST WILL GO TO THE REPORTING MANAGER OTHER WISE IT WILL REDIRECT TO THE HEAD OF HR.',2,_binary '\0',10,0,_binary '\0','[]',1,0,'2024-03-23 14:30:22',NULL);
 
@@ -30584,7 +30621,7 @@ INSERT INTO `department` VALUES (1,'Administration','Administration'),(2,'Manage
 
 INSERT INTO `employee_roles` VALUES (1,'Admin','Admin',0,1),(2,'Project Manager','Project Manager',0,2),(3,'Project Architect','Architect',0,4),(4,'Tester','Tester',0,4),(5,'Senior HR','Senior HR',0,2),(6,'HR','HR',0,2),(7,'Manager','Manager',0,2),(8,'Solution Architect','Architect',0,4),(9,'Application Architect','Architect',0,4),(10,'Networking','Networking',0,4),(11,'Test Lead','Test Lead',0,4),(12,'Full stack Developer','Full stack Developer',0,4),(13,'Developer','Backend (Server side) Developer',0,4),(14,'Sr. Software Developer','Backend (Server side) Developer',0,4),(15,'Database Developer','Database Developer',0,4),(16,'Frontend (UI) Developer','Frontend (UI) Developer',0,4),(17,'System Engineer','System Engineer',0,4),(18,'Associate Engineer','Associate Engineer',0,4),(19,'Team Lead','Team Lead',0,4),(20,'Other','Other',0,4);
 
-INSERT INTO `itemstatus` VALUES (1,'Completed','Payment received'),(2,'Pending','Payment pending by client'),(3,'Canceled','Payment canceled by sender'),(4,'Not Generated','Payment bill not yet generated'),(5,'Rejected','Payment rejected by client'),(6,'Generated','GST raised for payment, waiting for confirmation.'),(7,'Raised','Bill raised to client'),(8,'Submitted','Attendance submitted'),(9,'Approved','Request approved.'),(10,'Present','Present'),(11,'Absent','Absent'),(12,'MissingAttendanceRequest','MissingAttendanceRequest'),(13,'Saved','Saved'),(14,'Payment done','Payment done and transfered to employees'),(15,'Payment processed','Payment is processed but not transfered.'),(16,'Payment pending','Payment processing is not yet started.'),(17,'Payment on hold','Payment put on hold.'),(18,'Payment canceled','Payment canceled.'),(19,'Payment failed','Payment failed due to some technical reason.');
+INSERT INTO `itemstatus` VALUES (1,'Completed','Payment received'),(2,'Pending','Payment pending by client'),(3,'Canceled','Payment canceled by sender'),(4,'Not Generated','Payment bill not yet generated'),(5,'Rejected','Payment rejected by client'),(6,'Generated','GST raised for payment, waiting for confirmation.'),(7,'Raised','Bill raised to client'),(8,'Submitted','Attendance submitted'),(9,'Approved','Request approved.'),(10,'Present','Present'),(11,'Absent','Absent'),(12,'MissingAttendanceRequest','MissingAttendanceRequest'),(13,'Saved','Saved'),(14,'Payment done','Payment done and transfered to employees'),(15,'Payment processed','Payment is processed but not transfered.'),(16,'Payment pending','Payment processing is not yet started.'),(17,'Payment on hold','Payment put on hold.'),(18,'Payment canceled','Payment canceled.'),(19,'Payment failed','Payment failed due to some technical reason.'), (20,'Leave','Request for leave.'), ;
 
 INSERT INTO `org_hierarchy` VALUES (1,0,0,'CEO',NULL,NULL,_binary '\0',1,_binary ''),(2,0,1,'CTO',NULL,NULL,_binary '\0',1,_binary ''),(3,0,1,'CFO',NULL,NULL,_binary '\0',1,_binary ''),(4,0,1,'COO',NULL,NULL,_binary '\0',1,_binary ''),(5,0,1,'CHRO',NULL,NULL,_binary '\0',1,_binary ''),(6,0,2,'DEVELOPMENT',NULL,NULL,_binary '',1,_binary ''),(7,0,2,'IT DEPERTMENT',NULL,NULL,_binary '',1,_binary ''),(8,0,6,'DELIVERY MANAGER',NULL,NULL,_binary '\0',1,_binary ''),(9,0,8,'PROJECT MANAGER',NULL,NULL,_binary '\0',1,_binary ''),(10,0,9,'REPORTING MANAGER',NULL,NULL,_binary '\0',1,_binary ''),(11,0,2,'ARCHITECT TEAM',NULL,NULL,_binary '',1,_binary ''),(12,0,11,'ARCHITECT',NULL,NULL,_binary '\0',1,_binary ''),(13,0,11,'TECHNICAL ARCHITECT',NULL,NULL,_binary '\0',1,_binary ''),(14,0,11,'SOLUTION ARCHITECT',NULL,NULL,_binary '\0',1,_binary ''),(15,0,3,'TAX DEPERTMENT',NULL,NULL,_binary '',1,_binary ''),(16,0,3,'LEGAL DEPARTMENT',NULL,NULL,_binary '',1,_binary ''),(17,0,4,'OPERATION DEPARTMENT',NULL,NULL,_binary '',1,_binary ''),(18,0,5,'HR DERPARTMENT',NULL,NULL,_binary '',1,_binary ''),(19,0,18,'HR MANGAER',NULL,NULL,_binary '\0',1,_binary ''),(20,0,19,'HR',NULL,NULL,_binary '\0',1,_binary ''),(21,0,19,'SR. HR',NULL,NULL,_binary '\0',1,_binary ''),(22,0,10,'TEAM LEAD',NULL,NULL,_binary '\0',1,_binary ''),(23,0,10,'TEST LEAD',NULL,NULL,_binary '\0',1,_binary ''),(24,0,22,'ASSOCIATE',NULL,NULL,_binary '\0',1,_binary ''),(25,0,22,'SOFTWARE DEVELOPER',NULL,NULL,_binary '\0',1,_binary ''),(26,0,22,'SR. SOFTWARE DEVELOPER',NULL,NULL,_binary '\0',1,_binary ''),(27,0,23,'TESTER',NULL,NULL,_binary '\0',1,_binary ''),(28,0,23,'SR. TESTER',NULL,NULL,_binary '\0',1,_binary ''),(29,0,7,'NETWORK TEAM',NULL,NULL,_binary '\0',1,_binary '');
 
@@ -30620,7 +30657,6 @@ INSERT INTO `performance_objective` VALUES (1,'CODE QUALITY AND MAINTAINABILITY'
 
 Set Global event_scheduler = ON;
 
-Drop event if exists daily_job;
 Create event daily_job
 ON SCHEDULE
 	EVERY 1 DAY
