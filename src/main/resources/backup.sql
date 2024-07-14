@@ -3680,6 +3680,110 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_add_next_attendance_records_by_job_ins` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_add_next_attendance_records_by_job_ins`(
+    
+/*
+
+	call sp_add_next_attendance_records_by_job_ins();
+
+*/    
+)
+Begin
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+					 
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_add_next_attendance_records_by_job_ins', 1, 0, @Result);
+	end;
+    
+	Set @counter = 0;
+    Set @maxId = 0;
+    Set @attrId = 0;
+    Set @fromDate = 0;
+    
+    select AttendanceId, AttendanceDate into @attrId, @fromDate from daily_attendance
+    order by AttendanceDate desc 
+    limit 1;
+    
+    Select Max(EmployeeUid) into @maxId from employees;
+    Set @id = 1;
+    
+    Set @limitDate = date_add(utc_timestamp(), interval 10 day);
+    Set @dayLimit = datediff(@limitDate, @fromDate);
+    
+    # select @fromDate, @limitDate, @dayLimit;
+    Set @fromDate = DATE_ADD(@fromDate, interval 1 Day);
+    
+   while (@dayLimit > 0) do
+    begin
+    
+		Set @id = 1;
+		while(@id <= @maxId) do
+		begin
+			if exists(Select 1 from employees where EmployeeUid = @id and IsActive = true) then
+			begin
+				INSERT INTO daily_attendance
+				SELECT
+					@attrId:= @attrId + 1,
+					e.EmployeeUid,
+					CONCAT(e.FirstName, ' ', e.LastName),
+					e.Email,
+					0 AS ReviewerId,
+					null,
+					null,
+					0 AS ProjectId,
+					0 AS TaskId,
+					0 AS TaskType,
+					'00:00:00' AS LogOn,
+					'00:00:00' AS LogOff,
+					480 AS TotalMinutes, -- Random number of minutes (0 to 480)
+					'[]' AS Comments,
+					Case
+						When weekday(@fromDate) = 6
+						then 3
+						else 0
+					End AS AttendanceStatus,
+					WEEKOFYEAR(@fromDate) AS WeekOfYear,
+					@fromDate AS AttendanceDate,
+					1,
+					false,
+					0,
+					1 AS CreatedBy,
+					NOW() AS CreatedOn,
+					NULL AS UpdatedBy,
+					NULL AS UpdatedOn
+				FROM employees e 
+				where EmployeeUid = @id;
+			end;
+			end if;
+			
+			Set @id = @id + 1;			
+		end;
+		end while;
+        
+        Set @fromDate = DATE_ADD(@fromDate, interval 1 Day);
+        Set @dayLimit = @dayLimit - 1;
+	end;
+    end while;
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_adhoc_detail_get` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -8888,6 +8992,7 @@ BEGIN
 		WorkTypeId,
 		IsOnLeave,
 		LeaveId,
+		a.UpdatedOn,
 		Case 
 			When AttendanceDate = c.HolidayDate then true
             Else false
@@ -13420,6 +13525,103 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_employee_getbyid_to_reg_or_upd_by_excel` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_employee_getbyid_to_reg_or_upd_by_excel`(
+	_EmployeeId bigint,	
+	_Mobile varchar(20),
+    _Email varchar(100),
+    _CompanyId int
+
+/*
+
+	call sp_employee_getbyid_to_reg_or_upd_by_excel(1, '', 'rohit@mail.com', 1)
+
+*/
+
+)
+Begin
+	Declare exit handler for sqlexception
+	Begin
+	
+		GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = CONCAT('ERROR ', @errorno ,  ' (', @sqlstate, '): ', @errortext);
+		Call sp_LogException(@Message, '', 'sp_employee_getbyid_to_reg_or_upd_by_excel', 1, 0, @Result);
+	End;
+
+	Set @EmailCount = 0;
+    Set @MobileCount = 0;
+    Set @EmployeeCount = 0;
+    
+    if exists (select 1 from employees e where e.EmployeeUid = _EmployeeId And e.IsActive = true) then  
+    begin
+		Set @EmployeeCount = 1;
+        
+		select count(e.EmployeeUid) into @EmailCount from employees e
+		where e.Email = _Email And e.EmployeeUid <> _EmployeeId;
+		
+		select count(e.EmployeeUid) into @MobileCount from employees e
+		where e.Mobile = _Mobile And e.EmployeeUid <> _EmployeeId;
+    
+		select e.*
+		from employees e
+		where e.EmployeeUid = _EmployeeId
+		And e.IsActive = true;
+    end;
+    else
+    begin
+		select count(e.EmployeeUid) into @EmployeeCount from employees e
+		where e.EmployeeUid = _EmployeeId;
+    
+		select count(e.EmployeeUid) into @EmailCount from employees e
+		where e.Email = _Email;
+    
+		select count(e.EmployeeUid) into @MobileCount from employees e
+		where e.Mobile = _Mobile;    
+        
+		select e.*
+		from employees e
+		where e.EmployeeUid = _EmployeeId
+		And e.IsActive = true;
+    end;    
+    end if;
+
+	set @financialYear = 0;
+	select 
+		FinancialYear into @financialYear
+	from company_setting
+	where 
+		Case when _CompanyId > 0 Then  CompanyId = _CompanyId
+		Else IsPrimary = 1
+	End;
+    
+    select * from employee_declaration
+    where EmployeeId = _EmployeeId
+    and DeclarationFromYear = @financialYear;
+    
+    select * from employee_salary_detail
+    where EmployeeId = _EmployeeId
+    and FinancialStartYear = @financialYear;
+    
+    select @EmployeeCount EmployeeCount, @MobileCount MobileCount, @EmailCount EmailCount;
+
+end ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_Employee_GetCompleteDetail` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -15252,6 +15454,58 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_employee_registration_common_data` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_employee_registration_common_data`(
+    _CompanyId int
+
+/*
+
+	call sp_employee_registration_common_data(1)
+
+*/
+
+)
+Begin
+	Declare exit handler for sqlexception
+	Begin
+	
+		GET DIAGNOSTICS CONDITION 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+									
+		Set @Message = CONCAT('ERROR ', @errorno ,  ' (', @sqlstate, '): ', @errortext);
+		Call sp_LogException(@Message, '', 'sp_employee_registration_common_data', 1, 0, @Result);
+	End;
+
+	select * from salary_components;
+    
+	set @stateName = '';
+    select State into @stateName from company where CompanyId = _CompanyId limit 1;
+    
+	select s.*, @stateName as StateName from company_setting s
+	where 
+		Case when _CompanyId > 0 Then s.CompanyId = _CompanyId
+		Else s.IsPrimary = true
+	End;
+    select * from ptax_slab where LOWER(StateName) = LOWER(@stateName);
+    
+    select * from surcharge_slab;
+
+end ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_employee_roles_getall` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -15384,6 +15638,99 @@ Begin
         
         select * from work_shifts
         where WorkShiftId = @workShiftId;
+	End;
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_employee_salary_detail_component_by_empid` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_employee_salary_detail_component_by_empid`(
+
+	# call sp_employee_salary_detail_component_by_empid(2024, 2)
+
+	_FinancialStartYear int,
+	_EmployeeId bigint
+)
+Begin
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_employee_salary_detail_component_by_empid', 1, 0, @Result);
+	end;  
+
+	Select * from employee_salary_detail
+	where EmployeeId = _EmployeeId and FinancialStartYear = _FinancialStartYear;
+	
+	Select * from salary_components
+	Where IsActive = true; 
+    
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_employee_salary_detail_Filterby_empid` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_employee_salary_detail_Filterby_empid`(
+
+	_SearchString varchar(250),
+	_CompanyId int
+
+/*
+
+	call sp_employee_salary_detail_Filterby_empid('2,3', 1)
+
+*/
+
+)
+Begin
+	Begin
+		Declare Exit handler for sqlexception
+		Begin
+			Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+										@errorno = MYSQL_ERRNO,
+										@errortext = MESSAGE_TEXT;
+			Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+			Call sp_LogException (@Message, '', 'sp_employee_salary_detail_Filterby_empid', 1, 0, @Result);
+		end;  
+		 
+         Begin
+            set @financialYear  = 0;
+            select FinancialYear into @financialYear from company_setting
+            where CompanyId = _CompanyId;
+            
+            Set @SelectQuery = CONCAT('Select d.*,concat(e.FIrstName, " " , e.LastName) EmployeeName, e.Email, e.CreatedOn DateOfJoining from employee_salary_detail d
+				inner join employees e on e.EmployeeUid = d.EmployeeId 
+				Where d.FinancialStartYear = @financialYear and  d.EmployeeId in (', _SearchString, ')'
+			);
+            
+		prepare SelectQuery from @SelectQuery;
+		execute SelectQuery;	
+        
+		End;
 	End;
 End ;;
 DELIMITER ;
@@ -17166,6 +17513,163 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_generate_attendance_initial_partition` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_generate_attendance_initial_partition`(
+
+/*
+
+	call sp_generate_attendance_initial_partition();
+
+*/
+)
+Begin
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+					 
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_generate_attendance_initial_partition', 1, 0, @Result);
+	end;
+
+	
+    Set @partitionYear = Year(utc_timestamp());
+	Set @SelectQuery = Concat('
+		ALTER TABLE daily_attendance
+		PARTITION BY RANGE (YEAR(AttendanceDate)) (
+			PARTITION p', @partitionYear, + ' VALUES LESS THAN (', @partitionYear + 1 ,')
+		)'
+	);
+    
+	# select @SelectQuery;
+	prepare SelectQuery from @SelectQuery;
+	execute SelectQuery;
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_generate_attendance_next_partition` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_generate_attendance_next_partition`(
+	_PartitionYear int
+
+/*
+
+    call sp_generate_attendance_next_partition(2025);
+
+*/
+)
+Begin
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+					 
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_generate_attendance_next_partition', 1, 0, @Result);
+	end;
+
+	Set @SelectQuery = Concat('
+		ALTER TABLE daily_attendance
+		ADD PARTITION (
+			PARTITION p', _PartitionYear, + ' VALUES LESS THAN (', _PartitionYear + 1 ,')
+		)'
+	);
+    
+	# select @SelectQuery;
+	prepare SelectQuery from @SelectQuery;
+	execute SelectQuery;
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp_generate_attendance_partition` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_generate_attendance_partition`(
+	_PartitionYear int,
+    _IsFirstPartition bit
+
+/*
+
+	call sp_generate_attendance_partition(2024, true);
+    
+    call sp_generate_attendance_partition(2025, false);
+
+*/
+)
+Begin
+	Declare Exit handler for sqlexception
+	Begin
+		Get Diagnostics condition 1 @sqlstate = RETURNED_SQLSTATE,
+									@errorno = MYSQL_ERRNO,
+									@errortext = MESSAGE_TEXT;
+					 
+		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
+		Call sp_LogException (@Message, '', 'sp_generate_attendance_partition', 1, 0, @Result);
+	end;
+
+    Set @SelectQuery = '';
+
+	if (_IsFirstPartition) then
+    begin
+		Set @SelectQuery = Concat('
+			ALTER TABLE daily_attendance
+			PARTITION BY RANGE (YEAR(AttendanceDate)) (
+				PARTITION p', _PartitionYear, + ' VALUES LESS THAN (', _PartitionYear + 1 ,')
+			)'
+		);
+	end;
+    else
+    begin
+		Set @SelectQuery = Concat('
+			ALTER TABLE daily_attendance
+			ADD PARTITION (
+				PARTITION p', _PartitionYear, + ' VALUES LESS THAN (', _PartitionYear + 1 ,')
+			)'
+		);
+    end;
+    end if;
+    
+	# select @SelectQuery;
+	prepare SelectQuery from @SelectQuery;
+	execute SelectQuery;
+End ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `sp_generate_current_month_attandance` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -17442,7 +17946,7 @@ BEGIN
 									@errortext = MESSAGE_TEXT;
 									
 		Set @Message = concat ('ERROR ', @errorno ,  ' (', @sqlstate, '); ', @errortext);
-		Call sp_LogException (@Message, '', 'sp_daily_attendance_by_user', 1, 0, @Result);
+		Call sp_LogException (@Message, '', 'sp_get_leave_plan_type_by_leaveid', 1, 0, @Result);
 	end;
 
 	set @leaveplantypeid = 0;
@@ -21834,6 +22338,8 @@ Begin
                 set EmployeeId = @employeeId
                 where RoleId = 1;
 				
+                call sp_generate_attendance_initial_partition(); 
+                
 				set _ProcessingResult = 'inserted';
 			end;
 			end if;
