@@ -12,10 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -48,6 +45,27 @@ public class BuildSystemService {
         dataSource.setPassword(databaseConfiguration.getPassword());
         dataSource.setCatalog(databaseConfiguration.getCatalog());
         return dataSource;
+    }
+
+    private String getBackupScriptFilePath(String fileName) {
+        String filePath = null;
+        // Get the class loader
+        ClassLoader classLoader = getClass().getClassLoader();
+
+        // Get the resource URL
+        URL resourceUrl = classLoader.getResource(fileName);
+
+        if (resourceUrl != null) {
+            // Convert the URL to a file
+            File resourceFile = new File(resourceUrl.getFile());
+
+            // Get the complete file path
+            filePath =  resourceFile.getAbsolutePath();
+        } else {
+            System.out.println("Resource not found.");
+        }
+
+        return filePath;
     }
 
     private List<String> getDatabaseScript(String databaseName) throws IOException, URISyntaxException {
@@ -131,6 +149,10 @@ public class BuildSystemService {
 
             String databaseName = getDatabaseName(registrationDetail);
             DataSource dataSource = getDataSource();
+
+            String filePath = getBackupScriptFilePath("backup.sql");
+            runBackupScript(filePath);
+
             List<String> scripts = getDatabaseScript(databaseName);
 
             // Create new database
@@ -328,7 +350,7 @@ public class BuildSystemService {
             statement.execute();
             flag = true;
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error(e.getMessage());
         }
 
         return flag;
@@ -377,7 +399,7 @@ public class BuildSystemService {
                 index++;
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error(e.getMessage());
             message = e.getMessage() + " Query: " + query;
         } catch (Exception ex) {
             message = ex.getMessage();
@@ -421,7 +443,7 @@ public class BuildSystemService {
     private boolean ifTableNotCreated(String tableName, List<String> createdTableList) {
         var records = createdTableList.stream().filter(x -> x.equals(tableName)).toList();
 
-        return records.size() == 0;
+        return records.isEmpty();
     }
 
     private List<String> findReferenceTableName(String query) throws Exception {
@@ -449,6 +471,38 @@ public class BuildSystemService {
             // If no match is found, return null or throw an exception
             throw new Exception("Table not found. Query: " + query);
             // Alternatively, you can throw an exception or handle the case as per your requirement
+        }
+    }
+
+    private void runBackupScript(String scriptPath) throws IOException, InterruptedException {
+        try {
+            // Create a ProcessBuilder to run the script
+            ProcessBuilder processBuilder = new ProcessBuilder(scriptPath);
+
+            // Redirect error stream to the output stream
+            processBuilder.redirectErrorStream(true);
+
+            // Start the process
+            Process process = processBuilder.start();
+
+            // Read the output of the script
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    System.out.println(line);
+                }
+            }
+
+            // Wait for the process to complete and check the exit value
+            int exitCode = process.waitFor();
+            if (exitCode == 0) {
+                System.out.println("Backup script executed successfully.");
+            } else {
+                System.out.println("Backup script execution failed with exit code: " + exitCode);
+            }
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+            throw e;
         }
     }
 }
