@@ -813,6 +813,7 @@ CREATE TABLE `company_setting` (
   `LeaveAccrualRunCronDayOfMonth` int DEFAULT NULL,
   `EveryMonthLastDayOfDeclaration` int DEFAULT NULL,
   `IsJoiningBarrierDayPassed` bit(1) DEFAULT b'0',
+  `TimeDifferences` varchar(10) DEFAULT '0:00',
   PRIMARY KEY (`SettingId`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -8418,6 +8419,7 @@ CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_company_setting_insupd`(
     _NoticePeriodInProbation int,
     _ExcludePayrollFromJoinDate int,
 	_AdminId bigint,
+	_TimeDifferences varchar(10),
     out _ProcessingResult varchar(50)
 )
 Begin
@@ -8452,7 +8454,8 @@ Begin
                 _TimezoneName,
 				_LeaveAccrualRunCronDayOfMonth,
 				_EveryMonthLastDayOfDeclaration,
-                _IsJoiningBarrierDayPassed
+                _IsJoiningBarrierDayPassed,
+				_TimeDifferences
             );
             set _ProcessingResult = 'inserted';
         end;
@@ -8472,7 +8475,8 @@ Begin
 					EveryMonthLastDayOfDeclaration		=		_EveryMonthLastDayOfDeclaration,
                     IsJoiningBarrierDayPassed			=		_IsJoiningBarrierDayPassed,
                     ExcludePayrollFromJoinDate			=		ExcludePayrollFromJoinDate,
-					NoticePeriodInProbation				=		_NoticePeriodInProbation
+					NoticePeriodInProbation				=		_NoticePeriodInProbation,
+					TimeDifferences						=		_TimeDifferences
 			where 	SettingId 							= 		_SettingId;
 			
 			set _ProcessingResult = 'updated';
@@ -19189,12 +19193,14 @@ Begin
     else 
     begin
 		select 
-            e.EmployeeUid, 
-            e.Email, 
-            concat(e.FirstName, ' ', e.LastName) Name, 
-            true IsRequired  
-		from employees e		
-		where e.EmployeeUid = _EmployeeId;
+			emp.EmployeeUid as EmployeeId, 
+			emp.Email, 
+			concat(emp.FirstName, ' ', emp.LastName) Name, 
+			e.IsRequired 
+		from approval_chain_detail e
+		inner join employees emp on emp.DesignationId = e.AssignieId
+		where e.ApprovalWorkFlowId = 1 
+		and emp.EmployeeUid = (select ReportingManagerId from employees where EmployeeUid = _EmployeeId);
     end;
     end if;
 End ;;
@@ -19959,6 +19965,36 @@ Begin
 				UpdatedOn						=			utc_timestamp(),
 				UpdatedBy						=			_ReportingManagerId
 			Where 	LeaveRequestNotificationId 	= 			_LeaveRequestNotificationId;
+
+			 if (_RequestStatusId = 9) then
+            begin
+				Set @fromDate = null, @toDate = null;
+				select FromDate, ToDate into @fromDate, @toDate from leave_request_notification
+				where LeaveRequestNotificationId = _LeaveRequestNotificationId;
+				
+				while @fromDate <= @toDate do
+				begin
+					Set @attendaceId = 0, @attendacneStatus = 0;
+					
+					Select AttendanceId, AttendanceStatus into @attendaceId, @attendacneStatus 
+					from daily_attendance where AttendanceDate = @fromDate
+                    and EmployeeId = _EmployeeId;
+                    
+					if (@attendacneStatus != 3) then
+					begin
+						Update daily_attendance
+						set AttendanceStatus = 20,
+						IsOnLeave = true,
+						LeaveId = _LeaveRequestNotificationId
+						where AttendanceId = @attendaceId;
+					end;
+					end if;
+					
+					Set @fromDate = @fromDate + 1;
+				end;
+				end while;
+			end;
+            end if;
 		End;
 		End if;
 	
@@ -22331,7 +22367,8 @@ Begin
                     _TimezoneName,
                     2,
                     20,
-                    false
+                    false,
+					'-05:30'
                 );
 
 				update org_hierarchy
@@ -30568,7 +30605,7 @@ INSERT INTO `accesslevel` VALUES (1,'Admin','Having all rights','2022-10-17 00:0
 
 INSERT INTO `application_setting` VALUES (1,1,1,2,'{\"PasswordMinLength\":8,\"PasswordMaxLength\":16,\"PasswordRegexFormula\":1,\"TemporaryPasswordExpiryTimeInSeconds\":3600}');
 
-INSERT INTO `approval_chain_detail` VALUES (1,1,19,_binary '\0','2023-10-13 09:30:19',2),(2,1,2,_binary '','2023-10-13 09:30:19',2),(3,1,1,_binary '\0','2023-10-13 09:30:19',2),(4,1,19,_binary '\0','2024-03-23 14:30:22',2);
+INSERT INTO `approval_chain_detail` VALUES (1,1,9,_binary '\1','2023-10-13 09:30:19',2);
 
 INSERT INTO `approval_work_flow` VALUES (1,'DEFAULT FLOW','IF EMPLOYEE DOESN\'T ASSOCIATED WITH ANY PROJECT THEN THIS FOLLOW WILL BE USED AS A DEFAULT WORK FLOW. IN THIS FOLOW, EMPLOYEE HAS ANY REPORTING MANAGER ASSIGN THEN ALL THE REQUEST WILL GO TO THE REPORTING MANAGER OTHER WISE IT WILL REDIRECT TO THE HEAD OF HR.',2,_binary '\0',10,0,_binary '\0','[]',1,0,'2024-03-23 14:30:22',NULL);
 
@@ -30620,7 +30657,6 @@ INSERT INTO `performance_objective` VALUES (1,'CODE QUALITY AND MAINTAINABILITY'
 
 Set Global event_scheduler = ON;
 
-Drop event if exists daily_job;
 Create event daily_job
 ON SCHEDULE
 	EVERY 1 DAY
