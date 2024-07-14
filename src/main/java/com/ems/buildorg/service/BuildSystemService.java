@@ -12,10 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -131,6 +128,7 @@ public class BuildSystemService {
 
             String databaseName = getDatabaseName(registrationDetail);
             DataSource dataSource = getDataSource();
+
             List<String> scripts = getDatabaseScript(databaseName);
 
             // Create new database
@@ -328,7 +326,7 @@ public class BuildSystemService {
             statement.execute();
             flag = true;
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error(e.getMessage());
         }
 
         return flag;
@@ -377,7 +375,7 @@ public class BuildSystemService {
                 index++;
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error(e.getMessage());
             message = e.getMessage() + " Query: " + query;
         } catch (Exception ex) {
             message = ex.getMessage();
@@ -421,7 +419,7 @@ public class BuildSystemService {
     private boolean ifTableNotCreated(String tableName, List<String> createdTableList) {
         var records = createdTableList.stream().filter(x -> x.equals(tableName)).toList();
 
-        return records.size() == 0;
+        return records.isEmpty();
     }
 
     private List<String> findReferenceTableName(String query) throws Exception {
