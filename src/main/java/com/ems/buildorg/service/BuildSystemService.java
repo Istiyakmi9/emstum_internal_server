@@ -2,7 +2,9 @@ package com.ems.buildorg.service;
 
 import com.ems.buildorg.modal.DbConfiguration;
 import com.ems.buildorg.modal.RegistrationDetail;
+import com.ems.buildorg.modal.WelcomeNotificationModal;
 import com.ems.buildorg.util.GetEncryptedPassword;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -143,10 +145,22 @@ public class BuildSystemService {
 
             callStoredProcedureWithParameter(databaseName, registrationDetail);
             updateTrialrequestService(registrationDetail);
-            status = addNewEntryIntoMasterData(databaseName, registrationDetail.getOrganizationName());
+            var orgCode = registrationDetail.getOrganizationName().toUpperCase().substring(0, 3);
+            status = addNewEntryIntoMasterData(databaseName, orgCode);
             if (status != null && !status.isEmpty()) {
+                var welcomeNotificationModal = new WelcomeNotificationModal();
+                welcomeNotificationModal.setCompanyName(registrationDetail.getCompanyName());
+                welcomeNotificationModal.setCode(status);
+                welcomeNotificationModal.setOrgCode(orgCode);
+                welcomeNotificationModal.setEmail(registrationDetail.getEmailId());
+                welcomeNotificationModal.setRecipientName(registrationDetail.getFirstName() + " "+ registrationDetail.getLastName());
+                welcomeNotificationModal.setPassword("welcome@$Bot_001");
+
+                sendWelcomeNotification(welcomeNotificationModal);
                 loadMasterDatabase("https://www.emstum.com/bot/dn/api/core/ReloadMaster/ReloadMaster");
                 loadMasterDatabase("https://www.emstum.com/bot/sb/api/master/reloadMaster");
+
+                status="inserted";
             }
         } catch (Exception ex) {
             logger.error(ex.getMessage());
@@ -154,6 +168,31 @@ public class BuildSystemService {
         }
 
         return status;
+    }
+
+    private void sendWelcomeNotification(WelcomeNotificationModal welcomeNotification) throws Exception {
+        try {
+            var url = new URL("http://emailservice-service:8195/api/Email/SendWelcomeNotification");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Accept", "application/json");
+
+            ObjectMapper mapper = new ObjectMapper();
+            String requestBody = mapper.writeValueAsString(welcomeNotification);
+
+            try (DataOutputStream wr = new DataOutputStream(connection.getOutputStream())) {
+                wr.writeBytes(requestBody);
+                wr.flush();
+            }
+
+            int responseCode = connection.getResponseCode();
+            System.out.println("Response Code: " + responseCode);
+            connection.disconnect();
+        } catch (Exception e) {
+            throw new Exception(e.getMessage());
+        }
     }
 
     private void loadMasterDatabase(String baseurl) throws Exception {
@@ -172,7 +211,7 @@ public class BuildSystemService {
         }
     }
 
-    private String addNewEntryIntoMasterData(String database, String organizationName) {
+    private String addNewEntryIntoMasterData(String database, String orgCode) {
         databaseConfiguration.setCatalog("ems_master");
         DataSource dataSource = getDataSource();
 
@@ -180,11 +219,11 @@ public class BuildSystemService {
 
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         try (Connection connection = Objects.requireNonNull(jdbcTemplate.getDataSource()).getConnection()) {
-            CallableStatement callableStatement = connection.prepareCall("{call sp_database_connections_insupd(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
+            CallableStatement callableStatement = connection.prepareCall("{call sp_database_connections_insupd(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)}");
 
             // Set input parameters
             callableStatement.setInt("_EmsMasterId", 0);
-            callableStatement.setString("_OrganizationCode", organizationName.toUpperCase().substring(0, 3));
+            callableStatement.setString("_OrganizationCode", orgCode);
             callableStatement.setString("_Code", "");
             callableStatement.setString("_Schema", "jdbc");
             callableStatement.setString("_DatabaseName", "mysql");
@@ -198,7 +237,7 @@ public class BuildSystemService {
             callableStatement.setInt("_MinPoolSize", 0);
             callableStatement.setInt("_MaxPoolSize", 100);
             callableStatement.setBoolean("_Pooling", true);
-
+            callableStatement.setBoolean("_IsActive", true);
             // Register output parameter
             callableStatement.registerOutParameter("_ProcessingResult", Types.VARCHAR);
 
